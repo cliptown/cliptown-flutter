@@ -1,0 +1,51 @@
+name: Flutter CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    name: Build and Test on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          
+      - name: Flutter dependencies
+        run: flutter pub get
+        
+      - name: Analyze project source
+        run: flutter analyze
+        
+      - name: Run unit tests
+        run: flutter test
+        
+  test_emulators:
+    name: Test on Android/iOS Emulators
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          
+      - name: Run iOS Simulator Tests
+        run: flutter test --machine # Add actual integration tests here
+        
+      - name: Setup Android Emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 29
+          script: flutter test integration_test
