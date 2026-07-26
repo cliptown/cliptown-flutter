@@ -36,6 +36,7 @@ dependencies:
   cupertino_icons: ^1.0.8
   cliptown_interfaces_dart:
     path: ../cliptown-interfaces/generated/dart
+  supabase_flutter: ^2.16.0
 
 dev_dependencies:
   flutter_test:
