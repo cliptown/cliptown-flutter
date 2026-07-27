@@ -68,10 +68,7 @@ void main() {
           'randomized-storage-segment-${counter++}'.padRight(32, 'x'),
     );
     expect(plan.chunks.length, 3);
-    expect(
-      plan.chunks.map((chunk) => chunk.index),
-      orderedEquals([0, 1, 2]),
-    );
+    expect(plan.chunks.map((chunk) => chunk.index), orderedEquals([0, 1, 2]));
     expect(
       plan.chunks.map((chunk) => chunk.randomizedStorageKey).toSet().length,
       3,
