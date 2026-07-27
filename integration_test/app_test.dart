@@ -24,16 +24,26 @@ void main() {
     await tester.tap(pin);
     await tester.pumpAndSettle();
     expect(
-      store.visibleClips.singleWhere((clip) => clip.id == 'design-reference').pinned,
+      store.visibleClips
+          .singleWhere((clip) => clip.id == 'design-reference')
+          .pinned,
       isTrue,
     );
 
     await tester.enterText(find.byKey(const Key('clip-search')), '');
+    tester.testTextInput.hide();
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('pinned-only')));
     await tester.pumpAndSettle();
 
-    expect(find.text('Skyline logo'), findsOneWidget);
+    final chip = tester.widget<FilterChip>(
+      find.byKey(const Key('pinned-only')),
+    );
+    expect(chip.selected, isTrue);
+    expect(
+      store.visibleClips.map((clip) => clip.id),
+      orderedEquals(<String>['deploy-command', 'design-reference']),
+    );
     expect(find.text('Deploy command'), findsOneWidget);
     expect(find.text('Security notes'), findsNothing);
   });
