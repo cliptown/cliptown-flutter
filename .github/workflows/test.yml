@@ -13,6 +13,9 @@ concurrency:
   group: flutter-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  CLIPTOWN_INTERFACES_REF: e4e957b5372dc363fe6a52559c8959f0de781efb
+
 jobs:
   quality:
     runs-on: ubuntu-latest
@@ -23,7 +26,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: cliptown/cliptown-interfaces
-          ref: main
+          ref: ${{ env.CLIPTOWN_INTERFACES_REF }}
           path: cliptown-interfaces
       - uses: subosito/flutter-action@v2
         with:
@@ -81,7 +84,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: cliptown/cliptown-interfaces
-          ref: main
+          ref: ${{ env.CLIPTOWN_INTERFACES_REF }}
           path: cliptown-interfaces
       - name: Install Linux desktop dependencies
         if: runner.os == 'Linux'
@@ -108,7 +111,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: cliptown/cliptown-interfaces
-          ref: main
+          ref: ${{ env.CLIPTOWN_INTERFACES_REF }}
           path: cliptown-interfaces
       - uses: actions/setup-java@v4
         with:
@@ -136,7 +139,10 @@ jobs:
           profile: pixel_6
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
-          script: cd cliptown-flutter && flutter test integration_test/app_test.dart -d emulator-5554 --reporter=expanded
+          script: |
+            cd cliptown-flutter
+            flutter test integration_test/app_test.dart -d emulator-5554 --reporter=expanded
+            flutter test integration_test/security_center_smoke_test.dart -d emulator-5554 --reporter=expanded
 
   ios-simulator:
     runs-on: macos-latest
@@ -148,7 +154,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: cliptown/cliptown-interfaces
-          ref: main
+          ref: ${{ env.CLIPTOWN_INTERFACES_REF }}
           path: cliptown-interfaces
       - uses: subosito/flutter-action@v2
         with:
@@ -157,7 +163,7 @@ jobs:
       - name: Build iOS simulator application
         working-directory: cliptown-flutter
         run: flutter pub get && flutter build ios --simulator
-      - name: Boot an available iPhone simulator and run integration test
+      - name: Boot an available iPhone simulator and run integration tests
         id: ios_test
         continue-on-error: true
         shell: bash
@@ -176,7 +182,10 @@ jobs:
           xcrun simctl boot "$DEVICE_ID" || true
           xcrun simctl bootstatus "$DEVICE_ID" -b
           flutter devices --machine | tee flutter-devices.json
-          flutter test integration_test/app_test.dart -d "$DEVICE_ID" --reporter=expanded 2>&1 | tee ios-integration.txt
+          {
+            flutter test integration_test/app_test.dart -d "$DEVICE_ID" --reporter=expanded
+            flutter test integration_test/security_center_smoke_test.dart -d "$DEVICE_ID" --reporter=expanded
+          } 2>&1 | tee ios-integration.txt
       - name: Upload iOS simulator diagnostics
         if: always()
         uses: actions/upload-artifact@v4
