@@ -9,35 +9,35 @@ final class FakeSecurityService implements AccountSecurityService {
 
   @override
   Future<List<DeviceSummary>> listDevices() async => [
-        DeviceSummary(
-          deviceId: 'device-a',
-          deviceName: 'Alex phone',
-          platform: 'android',
-          state: revoked
-              ? DeviceLifecycleState.revoked
-              : DeviceLifecycleState.active,
-          deviceListRevision: 3,
-          identityKeyFingerprint: Uint8List(32),
-          localUnlock: const LocalUnlockPolicy(
-            pinEnabled: false,
-            biometricEnabled: true,
-            passkeyEnabled: true,
-          ),
-          createdAt: DateTime.utc(2026, 1, 1),
-          revokedAt: revoked ? DateTime.utc(2026, 1, 2) : null,
-        ),
-      ];
+    DeviceSummary(
+      deviceId: 'device-a',
+      deviceName: 'Alex phone',
+      platform: 'android',
+      state: revoked
+          ? DeviceLifecycleState.revoked
+          : DeviceLifecycleState.active,
+      deviceListRevision: 3,
+      identityKeyFingerprint: Uint8List(32),
+      localUnlock: const LocalUnlockPolicy(
+        pinEnabled: false,
+        biometricEnabled: true,
+        passkeyEnabled: true,
+      ),
+      createdAt: DateTime.utc(2026, 1, 1),
+      revokedAt: revoked ? DateTime.utc(2026, 1, 2) : null,
+    ),
+  ];
 
   @override
   Future<List<RecoveryChannelSummary>> listRecoveryChannels() async => [
-        RecoveryChannelSummary(
-          channelId: 'channel-a',
-          kind: RecoveryChannelKind.email,
-          maskedDestination: 'a***@example.com',
-          createdAt: DateTime.utc(2026, 1, 1),
-          verifiedAt: DateTime.utc(2026, 1, 1),
-        ),
-      ];
+    RecoveryChannelSummary(
+      channelId: 'channel-a',
+      kind: RecoveryChannelKind.email,
+      maskedDestination: 'a***@example.com',
+      createdAt: DateTime.utc(2026, 1, 1),
+      verifiedAt: DateTime.utc(2026, 1, 1),
+    ),
+  ];
 
   @override
   Future<void> revokeDevice(
