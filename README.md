@@ -1,17 +1,26 @@
-# cliptown_app
+# ClipTown Flutter application
 
-A new Flutter project.
+Shared Flutter product surface for ClipTown desktop and mobile clients.
 
-## Getting Started
+## Current foundation
 
-This project is a starting point for a Flutter application.
+The application provides a testable local ClipTown shell with search, pinning, clip-kind previews, and a clear disconnected-sync state. It does not claim cloud synchronization or production encryption until the authentication, key-management, and SDK contracts are integrated.
 
-A few resources to get you started if this is your first Flutter project:
+The sibling `cliptown-interfaces` checkout is required at `../cliptown-interfaces` for the generated Dart wire package.
 
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
+## Validation
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+```sh
+flutter pub get
+dart format lib test integration_test
+flutter analyze --fatal-infos --fatal-warnings
+flutter test --coverage
+```
+
+GitHub Actions additionally builds Linux, macOS, Windows, Android, and iOS simulator targets and executes the same search-and-pin integration flow on Android and iOS emulators. Mobile tests target the explicit `integration_test/app_test.dart` entrypoint so directory discovery cannot silently skip or misroute the device test.
+
+## Platform boundaries
+
+- Desktop clipboard monitoring, menu-bar/tray integration, and global shortcuts require native plugins and explicit permission onboarding.
+- iOS and Android use user-initiated share, keyboard, or foreground capture flows; background clipboard access is not assumed.
+- Production sessions and key material must use platform secure storage and the reviewed ClipTown auth/encryption architecture.
