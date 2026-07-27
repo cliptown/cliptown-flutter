@@ -10,7 +10,8 @@ void main() {
   testWidgets('search and pin flow works on a real device surface', (
     tester,
   ) async {
-    await tester.pumpWidget(ClipTownApp(store: ClipStore()));
+    final store = ClipStore();
+    await tester.pumpWidget(ClipTownApp(store: store));
     await tester.pumpAndSettle();
 
     await tester.enterText(find.byKey(const Key('clip-search')), 'skyline');
@@ -18,7 +19,15 @@ void main() {
     expect(find.text('Skyline logo'), findsOneWidget);
     expect(find.text('Deploy command'), findsNothing);
 
-    await tester.tap(find.byKey(const Key('pin-design-reference')));
+    final pin = find.byKey(const Key('pin-design-reference'));
+    await tester.ensureVisible(pin);
+    await tester.tap(pin);
+    await tester.pumpAndSettle();
+    expect(
+      store.visibleClips.singleWhere((clip) => clip.id == 'design-reference').pinned,
+      isTrue,
+    );
+
     await tester.enterText(find.byKey(const Key('clip-search')), '');
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('pinned-only')));
