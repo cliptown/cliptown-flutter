@@ -100,6 +100,7 @@ jobs:
 
   android-emulator:
     runs-on: ubuntu-latest
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@v4
         with:
@@ -113,6 +114,15 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
+      - name: Enable hosted-runner KVM access
+        shell: bash
+        run: |
+          if [[ -e /dev/kvm ]]; then
+            sudo chmod 666 /dev/kvm
+            ls -l /dev/kvm
+          else
+            echo '/dev/kvm is unavailable; emulator runner will use its supported fallback.'
+          fi
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
@@ -125,10 +135,12 @@ jobs:
           arch: x86_64
           profile: pixel_6
           disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
           script: cd cliptown-flutter && flutter test integration_test/app_test.dart -d emulator-5554 --reporter=expanded
 
   ios-simulator:
     runs-on: macos-latest
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@v4
         with:
