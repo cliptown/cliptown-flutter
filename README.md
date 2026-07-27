@@ -17,7 +17,7 @@ flutter analyze --fatal-infos --fatal-warnings
 flutter test --coverage
 ```
 
-GitHub Actions additionally builds Linux, macOS, Windows, Android, and iOS simulator targets and executes the integration flow on Android and iOS emulators.
+GitHub Actions additionally builds Linux, macOS, Windows, Android, and iOS simulator targets and executes the same search-and-pin integration flow on Android and iOS emulators. Mobile tests target the explicit `integration_test/app_test.dart` entrypoint so directory discovery cannot silently skip or misroute the device test.
 
 ## Platform boundaries
 
