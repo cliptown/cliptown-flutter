@@ -1,0 +1,36 @@
+name: Security diagnostics
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  diagnostics:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2
+        with:
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - run: dart format lib/security.dart lib/security test/security_contract_test.dart test/security_center_test.dart
+      - name: Capture analyzer diagnostics
+        run: flutter analyze > security-analyze.txt 2>&1 || true
+      - name: Capture test diagnostics
+        run: flutter test test/security_contract_test.dart test/security_center_test.dart > security-test.txt 2>&1 || true
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: security-diagnostics
+          path: |
+            lib/security.dart
+            lib/security/
+            test/security_contract_test.dart
+            test/security_center_test.dart
+            security-analyze.txt
+            security-test.txt
+          if-no-files-found: error
+          retention-days: 1
