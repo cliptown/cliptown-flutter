@@ -104,6 +104,8 @@ jobs:
   android-emulator:
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    env:
+      ANDROID_AVD_HOME: ${{ runner.temp }}/cliptown-android-avd
     steps:
       - uses: actions/checkout@v4
         with:
@@ -136,6 +138,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          mkdir -p "$ANDROID_AVD_HOME"
           yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
             "platform-tools" \
@@ -147,12 +150,15 @@ jobs:
             --name cliptown-ci-api-29 \
             --package "system-images;android-29;default;x86_64" \
             --device "pixel_6"
+          test -f "$ANDROID_AVD_HOME/cliptown-ci-api-29.ini"
+          "$ANDROID_HOME/emulator/emulator" -list-avds
       - name: Boot Android emulator and run integration tests
         id: android_test
         continue-on-error: true
         shell: bash
         run: |
           set -euo pipefail
+          export ADB="$ANDROID_HOME/platform-tools/adb"
           "$ANDROID_HOME/emulator/emulator" \
             -avd cliptown-ci-api-29 \
             -port 5554 \
@@ -164,12 +170,12 @@ jobs:
             -wipe-data \
             > cliptown-flutter/android-emulator.log 2>&1 &
           echo "$!" > cliptown-flutter/android-emulator.pid
-          adb start-server
-          timeout 900 bash -c 'until adb -s emulator-5554 shell getprop sys.boot_completed 2>/dev/null | tr -d "\r" | grep -q "^1$"; do sleep 5; done'
-          adb -s emulator-5554 wait-for-device
-          adb -s emulator-5554 shell settings put global window_animation_scale 0
-          adb -s emulator-5554 shell settings put global transition_animation_scale 0
-          adb -s emulator-5554 shell settings put global animator_duration_scale 0
+          "$ADB" start-server
+          timeout 900 bash -c 'until "$ADB" -s emulator-5554 shell getprop sys.boot_completed 2>/dev/null | tr -d "\r" | grep -q "^1$"; do sleep 5; done'
+          "$ADB" -s emulator-5554 wait-for-device
+          "$ADB" -s emulator-5554 shell settings put global window_animation_scale 0
+          "$ADB" -s emulator-5554 shell settings put global transition_animation_scale 0
+          "$ADB" -s emulator-5554 shell settings put global animator_duration_scale 0
           cd cliptown-flutter
           flutter devices --machine | tee android-devices.json
           {
@@ -180,9 +186,10 @@ jobs:
         if: always()
         shell: bash
         run: |
-          adb -s emulator-5554 logcat -d > cliptown-flutter/adb-logcat.txt 2>&1 || true
-          adb -s emulator-5554 shell getprop > cliptown-flutter/android-properties.txt 2>&1 || true
+          "$ANDROID_HOME/platform-tools/adb" -s emulator-5554 logcat -d > cliptown-flutter/adb-logcat.txt 2>&1 || true
+          "$ANDROID_HOME/platform-tools/adb" -s emulator-5554 shell getprop > cliptown-flutter/android-properties.txt 2>&1 || true
           ps -ef | grep '[e]mulator' > cliptown-flutter/android-emulator-process.txt 2>&1 || true
+          find "$ANDROID_AVD_HOME" -maxdepth 2 -type f -print > cliptown-flutter/android-avd-files.txt 2>&1 || true
       - name: Upload Android emulator diagnostics
         if: always()
         uses: actions/upload-artifact@v4
@@ -195,6 +202,7 @@ jobs:
             cliptown-flutter/adb-logcat.txt
             cliptown-flutter/android-properties.txt
             cliptown-flutter/android-emulator-process.txt
+            cliptown-flutter/android-avd-files.txt
           if-no-files-found: warn
       - name: Enforce Android integration result
         if: steps.android_test.outcome == 'failure'
