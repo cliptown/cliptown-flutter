@@ -1,30 +1,34 @@
-// This is a basic Flutter widget test.
-//
-// To perform an interaction with a widget in your test, use the WidgetTester
-// utility in the flutter_test package. For example, you can send tap and scroll
-// gestures. You can also use WidgetTester to find child widgets in the widget
-// tree, read text, and verify that the values of widget properties are correct.
-
+import 'package:cliptown_app/cliptown_app.dart';
+import 'package:cliptown_app/src/clip_store.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:cliptown_app/main.dart';
-
 void main() {
-  testWidgets('Counter increments smoke test', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
-    await tester.pumpWidget(const MyApp());
+  testWidgets('renders ClipTown shell and filters clips', (tester) async {
+    await tester.pumpWidget(ClipTownApp(store: ClipStore()));
 
-    // Verify that our counter starts at 0.
-    expect(find.text('0'), findsOneWidget);
-    expect(find.text('1'), findsNothing);
+    expect(find.text('Your clipboard has a memory.'), findsOneWidget);
+    expect(find.text('Deploy command'), findsOneWidget);
+    expect(find.text('Skyline logo'), findsOneWidget);
 
-    // Tap the '+' icon and trigger a frame.
-    await tester.tap(find.byIcon(Icons.add));
+    await tester.enterText(find.byKey(const Key('clip-search')), 'security');
     await tester.pump();
 
-    // Verify that our counter has incremented.
-    expect(find.text('0'), findsNothing);
-    expect(find.text('1'), findsOneWidget);
+    expect(find.text('Security notes'), findsOneWidget);
+    expect(find.text('Deploy command'), findsNothing);
+  });
+
+  testWidgets('pin button updates pinned-only results', (tester) async {
+    final store = ClipStore();
+    await tester.pumpWidget(ClipTownApp(store: store));
+
+    await tester.tap(find.byKey(const Key('pin-design-reference')));
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('pinned-only')));
+    await tester.pump();
+
+    expect(find.text('Deploy command'), findsOneWidget);
+    expect(find.text('Skyline logo'), findsOneWidget);
+    expect(find.text('Security notes'), findsNothing);
   });
 }
