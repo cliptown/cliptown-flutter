@@ -142,13 +142,13 @@ jobs:
           arch: x86_64
           emulator-boot-timeout: 900
           disable-animations: true
-          working-directory: cliptown-flutter
           script: |
             set -o pipefail
+            cd cliptown-flutter
             flutter devices --machine | tee android-devices.json
             {
-              flutter test integration_test/app_test.dart -d "emulator-${EMULATOR_PORT:-5554}" --reporter=expanded
-              flutter test integration_test/security_center_smoke_test.dart -d "emulator-${EMULATOR_PORT:-5554}" --reporter=expanded
+              flutter test integration_test/app_test.dart -d emulator-5554 --reporter=expanded
+              flutter test integration_test/security_center_smoke_test.dart -d emulator-5554 --reporter=expanded
             } 2>&1 | tee android-integration.txt
       - name: Upload Android emulator diagnostics
         if: always()
@@ -158,8 +158,6 @@ jobs:
           path: |
             cliptown-flutter/android-devices.json
             cliptown-flutter/android-integration.txt
-            /home/runner/.android/avd
-            /home/runner/.android/adb*
           if-no-files-found: warn
       - name: Enforce Android integration result
         if: steps.android_test.outcome == 'failure'
