@@ -10,43 +10,43 @@ final class _DeviceSecurityService implements AccountSecurityService {
 
   @override
   Future<List<DeviceSummary>> listDevices() async => [
-        DeviceSummary(
-          deviceId: 'device-mobile-smoke',
-          deviceName: 'Mobile smoke device',
-          platform: 'mobile',
-          state: revoked
-              ? DeviceLifecycleState.revoked
-              : DeviceLifecycleState.active,
-          deviceListRevision: 7,
-          identityKeyFingerprint: Uint8List(32),
-          localUnlock: const LocalUnlockPolicy(
-            pinEnabled: true,
-            biometricEnabled: true,
-            passkeyEnabled: true,
-            pinKdf: PinKdfPolicy(
-              algorithm: 'argon2id-v1',
-              memoryKib: 65536,
-              iterations: 3,
-              parallelism: 1,
-              maxAttempts: 5,
-              lockoutSeconds: 300,
-            ),
-          ),
-          createdAt: DateTime.utc(2026, 7, 27),
-          revokedAt: revoked ? DateTime.utc(2026, 7, 27, 1) : null,
+    DeviceSummary(
+      deviceId: 'device-mobile-smoke',
+      deviceName: 'Mobile smoke device',
+      platform: 'mobile',
+      state: revoked
+          ? DeviceLifecycleState.revoked
+          : DeviceLifecycleState.active,
+      deviceListRevision: 7,
+      identityKeyFingerprint: Uint8List(32),
+      localUnlock: const LocalUnlockPolicy(
+        pinEnabled: true,
+        biometricEnabled: true,
+        passkeyEnabled: true,
+        pinKdf: PinKdfPolicy(
+          algorithm: 'argon2id-v1',
+          memoryKib: 65536,
+          iterations: 3,
+          parallelism: 1,
+          maxAttempts: 5,
+          lockoutSeconds: 300,
         ),
-      ];
+      ),
+      createdAt: DateTime.utc(2026, 7, 27),
+      revokedAt: revoked ? DateTime.utc(2026, 7, 27, 1) : null,
+    ),
+  ];
 
   @override
   Future<List<RecoveryChannelSummary>> listRecoveryChannels() async => [
-        RecoveryChannelSummary(
-          channelId: 'channel-mobile-smoke',
-          kind: RecoveryChannelKind.email,
-          maskedDestination: 'a***@example.com',
-          createdAt: DateTime.utc(2026, 7, 27),
-          verifiedAt: DateTime.utc(2026, 7, 27),
-        ),
-      ];
+    RecoveryChannelSummary(
+      channelId: 'channel-mobile-smoke',
+      kind: RecoveryChannelKind.email,
+      maskedDestination: 'a***@example.com',
+      createdAt: DateTime.utc(2026, 7, 27),
+      verifiedAt: DateTime.utc(2026, 7, 27),
+    ),
+  ];
 
   @override
   Future<void> revokeDevice(
