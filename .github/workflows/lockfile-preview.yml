@@ -1,0 +1,27 @@
+name: Lockfile preview
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  lockfile:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Setup Flutter
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+        with:
+          channel: stable
+          cache: true
+      - name: Generate lockfile
+        run: flutter pub get
+      - name: Emit compressed lockfile
+        shell: bash
+        run: |
+          printf 'LOCKFILE_GZIP_BASE64='
+          gzip -c pubspec.lock | base64 -w 0
+          printf '\n'
