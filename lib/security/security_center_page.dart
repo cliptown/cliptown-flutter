@@ -21,10 +21,7 @@ final class SecurityCenterPage extends StatefulWidget {
 
 final class _SecurityCenterPageState extends State<SecurityCenterPage> {
   late Future<
-    ({
-      List<DeviceSummary> devices,
-      List<RecoveryChannelSummary> channels,
-    })
+    ({List<DeviceSummary> devices, List<RecoveryChannelSummary> channels})
   >
   _load;
 
@@ -35,15 +32,16 @@ final class _SecurityCenterPageState extends State<SecurityCenterPage> {
   }
 
   void _reload() {
-    _load = Future.wait<Object>([
-      widget.service.listDevices(),
-      widget.service.listRecoveryChannels(),
-    ]).then(
-      (values) => (
-        devices: values[0] as List<DeviceSummary>,
-        channels: values[1] as List<RecoveryChannelSummary>,
-      ),
-    );
+    _load =
+        Future.wait<Object>([
+          widget.service.listDevices(),
+          widget.service.listRecoveryChannels(),
+        ]).then(
+          (values) => (
+            devices: values[0] as List<DeviceSummary>,
+            channels: values[1] as List<RecoveryChannelSummary>,
+          ),
+        );
   }
 
   Future<void> _revoke(DeviceSummary device) async {
@@ -85,9 +83,7 @@ final class _SecurityCenterPageState extends State<SecurityCenterPage> {
                   child: ListTile(
                     leading: const Icon(Icons.devices),
                     title: Text(device.deviceName),
-                    subtitle: Text(
-                      '${device.platform} · ${device.state.name}',
-                    ),
+                    subtitle: Text('${device.platform} · ${device.state.name}'),
                     trailing: device.canRevoke
                         ? IconButton(
                             tooltip: 'Revoke device',
@@ -121,16 +117,14 @@ final class _SecurityCenterPageState extends State<SecurityCenterPage> {
                 spacing: 8,
                 children: [
                   OutlinedButton.icon(
-                    onPressed: () => widget.onAddRecoveryChannel(
-                      RecoveryChannelKind.email,
-                    ),
+                    onPressed: () =>
+                        widget.onAddRecoveryChannel(RecoveryChannelKind.email),
                     icon: const Icon(Icons.email_outlined),
                     label: const Text('Add backup email'),
                   ),
                   OutlinedButton.icon(
-                    onPressed: () => widget.onAddRecoveryChannel(
-                      RecoveryChannelKind.phone,
-                    ),
+                    onPressed: () =>
+                        widget.onAddRecoveryChannel(RecoveryChannelKind.phone),
                     icon: const Icon(Icons.sms_outlined),
                     label: const Text('Add phone OTP'),
                   ),
