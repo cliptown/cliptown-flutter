@@ -103,7 +103,7 @@ jobs:
 
   android-emulator:
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
         with:
@@ -132,37 +132,77 @@ jobs:
       - name: Resolve dependencies and build Android application
         working-directory: cliptown-flutter
         run: flutter pub get && flutter build apk --debug
-      - name: Run Android integration tests
+      - name: Install and create Android virtual device
+        shell: bash
+        run: |
+          set -euo pipefail
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
+            "platform-tools" \
+            "emulator" \
+            "platforms;android-29" \
+            "system-images;android-29;default;x86_64"
+          echo no | "$ANDROID_HOME/cmdline-tools/latest/bin/avdmanager" create avd \
+            --force \
+            --name cliptown-ci-api-29 \
+            --package "system-images;android-29;default;x86_64" \
+            --device "pixel_6"
+      - name: Boot Android emulator and run integration tests
         id: android_test
         continue-on-error: true
-        uses: reactivecircus/android-emulator-runner@v2
-        with:
-          api-level: 29
-          target: default
-          arch: x86_64
-          emulator-boot-timeout: 900
-          disable-animations: true
-          script: |
-            set -o pipefail
-            cd cliptown-flutter
-            flutter devices --machine | tee android-devices.json
-            {
-              flutter test integration_test/app_test.dart -d emulator-5554 --reporter=expanded
-              flutter test integration_test/security_center_smoke_test.dart -d emulator-5554 --reporter=expanded
-            } 2>&1 | tee android-integration.txt
+        shell: bash
+        run: |
+          set -euo pipefail
+          "$ANDROID_HOME/emulator/emulator" \
+            -avd cliptown-ci-api-29 \
+            -port 5554 \
+            -no-window \
+            -gpu swiftshader_indirect \
+            -noaudio \
+            -no-boot-anim \
+            -no-snapshot \
+            -wipe-data \
+            > cliptown-flutter/android-emulator.log 2>&1 &
+          echo "$!" > cliptown-flutter/android-emulator.pid
+          adb start-server
+          timeout 900 bash -c 'until adb -s emulator-5554 shell getprop sys.boot_completed 2>/dev/null | tr -d "\r" | grep -q "^1$"; do sleep 5; done'
+          adb -s emulator-5554 wait-for-device
+          adb -s emulator-5554 shell settings put global window_animation_scale 0
+          adb -s emulator-5554 shell settings put global transition_animation_scale 0
+          adb -s emulator-5554 shell settings put global animator_duration_scale 0
+          cd cliptown-flutter
+          flutter devices --machine | tee android-devices.json
+          {
+            flutter test integration_test/app_test.dart -d emulator-5554 --reporter=expanded
+            flutter test integration_test/security_center_smoke_test.dart -d emulator-5554 --reporter=expanded
+          } 2>&1 | tee android-integration.txt
+      - name: Capture Android diagnostics
+        if: always()
+        shell: bash
+        run: |
+          adb -s emulator-5554 logcat -d > cliptown-flutter/adb-logcat.txt 2>&1 || true
+          adb -s emulator-5554 shell getprop > cliptown-flutter/android-properties.txt 2>&1 || true
+          ps -ef | grep '[e]mulator' > cliptown-flutter/android-emulator-process.txt 2>&1 || true
       - name: Upload Android emulator diagnostics
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: android-emulator-diagnostics
           path: |
+            cliptown-flutter/android-emulator.log
             cliptown-flutter/android-devices.json
             cliptown-flutter/android-integration.txt
+            cliptown-flutter/adb-logcat.txt
+            cliptown-flutter/android-properties.txt
+            cliptown-flutter/android-emulator-process.txt
           if-no-files-found: warn
       - name: Enforce Android integration result
         if: steps.android_test.outcome == 'failure'
         working-directory: cliptown-flutter
-        run: cat android-integration.txt 2>/dev/null || true; exit 1
+        run: |
+          cat android-integration.txt 2>/dev/null || true
+          tail -n 200 android-emulator.log 2>/dev/null || true
+          exit 1
 
   ios-simulator:
     runs-on: macos-latest
