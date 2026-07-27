@@ -38,8 +38,21 @@ jobs:
           dart format lib test integration_test
           git diff --exit-code -- lib test integration_test
       - name: Analyze with warnings as errors
+        id: analyze
+        continue-on-error: true
         working-directory: cliptown-flutter
-        run: flutter analyze --fatal-infos --fatal-warnings
+        run: flutter analyze --fatal-infos --fatal-warnings > analyze.txt 2>&1
+      - name: Upload analyzer diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: flutter-analyzer
+          path: cliptown-flutter/analyze.txt
+          if-no-files-found: error
+      - name: Enforce analyzer result
+        if: steps.analyze.outcome == 'failure'
+        working-directory: cliptown-flutter
+        run: cat analyze.txt && exit 1
       - name: Run unit and widget tests with coverage
         working-directory: cliptown-flutter
         run: flutter test --coverage --reporter=expanded
