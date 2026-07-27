@@ -31,7 +31,6 @@ void main() {
     );
 
     await tester.enterText(find.byKey(const Key('clip-search')), '');
-    tester.testTextInput.hide();
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('pinned-only')));
     await tester.pumpAndSettle();
