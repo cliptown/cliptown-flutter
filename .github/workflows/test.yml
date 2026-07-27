@@ -6,46 +6,119 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  contents: read
+
+concurrency:
+  group: flutter-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
-    name: Build and Test on ${{ matrix.os }}
+    name: Build and test on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
-      - uses: actions/checkout@v4
-      
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
       - name: Setup Flutter
-        uses: subosito/flutter-action@v2
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
         with:
-          channel: 'stable'
-          
+          channel: stable
+          cache: true
+
       - name: Flutter dependencies
         run: flutter pub get
-        
+
+      - name: Verify dependency lockfile is current
+        shell: bash
+        run: git diff --exit-code -- pubspec.lock
+
       - name: Analyze project source
         run: flutter analyze
-        
-      - name: Run unit tests
+
+      - name: Run unit and widget tests
         run: flutter test
-        
-  test_emulators:
-    name: Test on Android/iOS Emulators
+
+  ios_security_smoke:
+    name: iOS security integration smoke
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
-      
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
       - name: Setup Flutter
-        uses: subosito/flutter-action@v2
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
         with:
-          channel: 'stable'
-          
-      - name: Run iOS Simulator Tests
-        run: flutter test --machine # Add actual integration tests here
-        
-      - name: Setup Android Emulator
-        uses: reactivecircus/android-emulator-runner@v2
+          channel: stable
+          cache: true
+
+      - name: Flutter dependencies
+        run: flutter pub get
+
+      - name: Boot an available iPhone simulator
+        shell: bash
+        run: |
+          set -euo pipefail
+          DEVICE_ID="$({ python3 - <<'PY'
+          import json
+          import subprocess
+
+          payload = json.loads(
+              subprocess.check_output(
+                  ['xcrun', 'simctl', 'list', '--json', 'devices', 'available'],
+                  text=True,
+              )
+          )
+          for devices in payload['devices'].values():
+              for device in devices:
+                  if device.get('isAvailable') and device['name'].startswith('iPhone'):
+                      print(device['udid'])
+                      raise SystemExit(0)
+          raise SystemExit('no available iPhone simulator found')
+          PY
+          } )"
+          echo "IOS_SIMULATOR_ID=$DEVICE_ID" >> "$GITHUB_ENV"
+          xcrun simctl boot "$DEVICE_ID" || true
+          xcrun simctl bootstatus "$DEVICE_ID" -b
+
+      - name: Run iOS security integration test
+        run: flutter test integration_test/security_center_smoke_test.dart -d "$IOS_SIMULATOR_ID"
+
+  android_security_smoke:
+    name: Android security integration smoke
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Flutter dependencies
+        run: flutter pub get
+
+      - name: Enable KVM access
+        shell: bash
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Run Android security integration test
+        uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2
         with:
           api-level: 29
-          script: flutter test integration_test
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          emulator-options: >-
+            -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim
+            -camera-back none -no-snapshot-save
+          script: flutter test integration_test/security_center_smoke_test.dart -d emulator-5554
