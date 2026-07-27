@@ -13,12 +13,14 @@ dependencies:
   cliptown_interfaces:
     git:
       url: https://github.com/cliptown/cliptown-interfaces.git
-      ref: 5d41bd7406e6f588377585612855f120701ac7ac
+      ref: e4e957b5372dc363fe6a52559c8959f0de781efb
       path: generated/dart
   supabase_flutter: ^2.16.0
 
 dev_dependencies:
   flutter_test:
+    sdk: flutter
+  integration_test:
     sdk: flutter
   flutter_lints: ^6.0.0
 
