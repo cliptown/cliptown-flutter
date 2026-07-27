@@ -6,46 +6,138 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  contents: read
+
+concurrency:
+  group: flutter-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  test:
-    name: Build and Test on ${{ matrix.os }}
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+  quality:
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      
-      - name: Setup Flutter
-        uses: subosito/flutter-action@v2
         with:
-          channel: 'stable'
-          
-      - name: Flutter dependencies
+          path: cliptown-flutter
+      - uses: actions/checkout@v4
+        with:
+          repository: cliptown/cliptown-interfaces
+          ref: main
+          path: cliptown-interfaces
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Resolve dependencies
+        working-directory: cliptown-flutter
         run: flutter pub get
-        
-      - name: Analyze project source
-        run: flutter analyze
-        
-      - name: Run unit tests
-        run: flutter test
-        
-  test_emulators:
-    name: Test on Android/iOS Emulators
+      - name: Verify formatting
+        working-directory: cliptown-flutter
+        run: |
+          dart format lib test integration_test
+          git diff --exit-code -- lib test integration_test
+      - name: Analyze with warnings as errors
+        working-directory: cliptown-flutter
+        run: flutter analyze --fatal-infos --fatal-warnings
+      - name: Run unit and widget tests with coverage
+        working-directory: cliptown-flutter
+        run: flutter test --coverage --reporter=expanded
+      - uses: actions/upload-artifact@v4
+        with:
+          name: flutter-coverage
+          path: cliptown-flutter/coverage/lcov.info
+          if-no-files-found: error
+
+  desktop-builds:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: linux
+          - os: macos-latest
+            target: macos
+          - os: windows-latest
+            target: windows
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: cliptown-flutter
+      - uses: actions/checkout@v4
+        with:
+          repository: cliptown/cliptown-interfaces
+          ref: main
+          path: cliptown-interfaces
+      - name: Install Linux desktop dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y ninja-build libgtk-3-dev
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Build ${{ matrix.target }} debug application
+        shell: bash
+        working-directory: cliptown-flutter
+        run: |
+          flutter config --enable-${{ matrix.target }}-desktop
+          flutter pub get
+          flutter build ${{ matrix.target }} --debug
+
+  android-emulator:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: cliptown-flutter
+      - uses: actions/checkout@v4
+        with:
+          repository: cliptown/cliptown-interfaces
+          ref: main
+          path: cliptown-interfaces
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - working-directory: cliptown-flutter
+        run: flutter pub get && flutter build apk --debug
+      - uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          script: cd cliptown-flutter && flutter test integration_test -d emulator-5554 --reporter=expanded
+
+  ios-simulator:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
-      
-      - name: Setup Flutter
-        uses: subosito/flutter-action@v2
         with:
-          channel: 'stable'
-          
-      - name: Run iOS Simulator Tests
-        run: flutter test --machine # Add actual integration tests here
-        
-      - name: Setup Android Emulator
-        uses: reactivecircus/android-emulator-runner@v2
+          path: cliptown-flutter
+      - uses: actions/checkout@v4
         with:
-          api-level: 29
-          script: flutter test integration_test
+          repository: cliptown/cliptown-interfaces
+          ref: main
+          path: cliptown-interfaces
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Build iOS simulator application
+        working-directory: cliptown-flutter
+        run: flutter pub get && flutter build ios --simulator
+      - name: Boot an available iPhone simulator and run integration tests
+        shell: bash
+        working-directory: cliptown-flutter
+        run: |
+          DEVICE_ID=$(xcrun simctl list devices available | awk -F '[()]' '/iPhone.*\((Booted|Shutdown)\)/ {print $2; exit}')
+          test -n "$DEVICE_ID"
+          xcrun simctl boot "$DEVICE_ID" || true
+          xcrun simctl bootstatus "$DEVICE_ID" -b
+          flutter test integration_test -d "$DEVICE_ID" --reporter=expanded
