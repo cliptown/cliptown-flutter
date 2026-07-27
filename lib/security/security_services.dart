@@ -46,18 +46,9 @@ abstract interface class AccountSecurityService {
     required Uint8List publicPreKeyBundle,
     required LocalUnlockPolicy localUnlock,
   });
-  Future<void> approveDevice(
-    String deviceId, {
-    required int expectedRevision,
-  });
-  Future<void> suspendDevice(
-    String deviceId, {
-    required int expectedRevision,
-  });
-  Future<void> revokeDevice(
-    String deviceId, {
-    required int expectedRevision,
-  });
+  Future<void> approveDevice(String deviceId, {required int expectedRevision});
+  Future<void> suspendDevice(String deviceId, {required int expectedRevision});
+  Future<void> revokeDevice(String deviceId, {required int expectedRevision});
 
   Future<List<RecoveryChannelSummary>> listRecoveryChannels();
   Future<RecoveryChannelSummary> addRecoveryChannel({
