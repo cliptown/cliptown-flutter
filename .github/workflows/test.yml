@@ -104,8 +104,6 @@ jobs:
   android-emulator:
     runs-on: ubuntu-latest
     timeout-minutes: 45
-    env:
-      ANDROID_AVD_HOME: ${{ runner.temp }}/cliptown-android-avd
     steps:
       - uses: actions/checkout@v4
         with:
@@ -115,6 +113,9 @@ jobs:
           repository: cliptown/cliptown-interfaces
           ref: ${{ env.CLIPTOWN_INTERFACES_REF }}
           path: cliptown-interfaces
+      - name: Configure Android virtual device home
+        shell: bash
+        run: echo "ANDROID_AVD_HOME=$RUNNER_TEMP/cliptown-android-avd" >> "$GITHUB_ENV"
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
