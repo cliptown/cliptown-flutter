@@ -18,13 +18,14 @@ void main() {
     expect(find.text('Skyline logo'), findsOneWidget);
     expect(find.text('Deploy command'), findsNothing);
 
+    await tester.tap(find.byKey(const Key('pin-design-reference')));
     await tester.enterText(find.byKey(const Key('clip-search')), '');
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const Key('pin-design-reference')));
     await tester.tap(find.byKey(const Key('pinned-only')));
     await tester.pumpAndSettle();
 
     expect(find.text('Skyline logo'), findsOneWidget);
+    expect(find.text('Deploy command'), findsOneWidget);
     expect(find.text('Security notes'), findsNothing);
   });
 }
