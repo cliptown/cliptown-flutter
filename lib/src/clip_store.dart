@@ -19,17 +19,18 @@ class ClipPreview {
   final bool pinned;
 
   ClipPreview copyWith({bool? pinned}) => ClipPreview(
-        id: id,
-        title: title,
-        detail: detail,
-        kind: kind,
-        updatedAt: updatedAt,
-        pinned: pinned ?? this.pinned,
-      );
+    id: id,
+    title: title,
+    detail: detail,
+    kind: kind,
+    updatedAt: updatedAt,
+    pinned: pinned ?? this.pinned,
+  );
 }
 
 class ClipStore extends ChangeNotifier {
-  ClipStore({List<ClipPreview>? seed}) : _clips = List<ClipPreview>.of(seed ?? demoClips);
+  ClipStore({List<ClipPreview>? seed})
+    : _clips = List<ClipPreview>.of(seed ?? demoClips);
 
   final List<ClipPreview> _clips;
   String _query = '';
@@ -42,7 +43,13 @@ class ClipStore extends ChangeNotifier {
     final normalized = _query.trim().toLowerCase();
     return _clips
         .where((clip) => !(_pinnedOnly && !clip.pinned))
-        .where((clip) => normalized.isEmpty || '${clip.title} ${clip.detail} ${clip.kind}'.toLowerCase().contains(normalized))
+        .where(
+          (clip) =>
+              normalized.isEmpty ||
+              '${clip.title} ${clip.detail} ${clip.kind}'
+                  .toLowerCase()
+                  .contains(normalized),
+        )
         .toList(growable: false)
       ..sort((a, b) {
         final pinOrder = (b.pinned ? 1 : 0).compareTo(a.pinned ? 1 : 0);

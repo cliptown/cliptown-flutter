@@ -7,7 +7,9 @@ import 'package:integration_test/integration_test.dart';
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets('search and pin flow works on a real device surface', (tester) async {
+  testWidgets('search and pin flow works on a real device surface', (
+    tester,
+  ) async {
     await tester.pumpWidget(ClipTownApp(store: ClipStore()));
     await tester.pumpAndSettle();
 

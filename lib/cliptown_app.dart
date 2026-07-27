@@ -65,7 +65,10 @@ class ClipTownHome extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: <Widget>[
-                  Text('Your clipboard has a memory.', style: Theme.of(context).textTheme.headlineMedium),
+                  Text(
+                    'Your clipboard has a memory.',
+                    style: Theme.of(context).textTheme.headlineMedium,
+                  ),
                   const SizedBox(height: 8),
                   Text(
                     'Search and pin local encrypted clip previews. Cloud and peer synchronization remain disabled until authentication and key management are configured.',
@@ -98,14 +101,18 @@ class ClipTownHome extends StatelessWidget {
                       builder: (context, _) {
                         final clips = store.visibleClips;
                         if (clips.isEmpty) {
-                          return const Center(child: Text('No clips match this search.'));
+                          return const Center(
+                            child: Text('No clips match this search.'),
+                          );
                         }
                         return ListView.separated(
                           itemCount: clips.length,
-                          separatorBuilder: (_, __) => const SizedBox(height: 8),
+                          separatorBuilder: (_, __) =>
+                              const SizedBox(height: 8),
                           itemBuilder: (context, index) => _ClipCard(
                             clip: clips[index],
-                            onTogglePinned: () => store.togglePinned(clips[index].id),
+                            onTogglePinned: () =>
+                                store.togglePinned(clips[index].id),
                           ),
                         );
                       },
@@ -134,7 +141,11 @@ class _ClipCard extends StatelessWidget {
         key: Key('clip-${clip.id}'),
         leading: CircleAvatar(child: Text(clip.kind.characters.first)),
         title: Text(clip.title),
-        subtitle: Text(clip.detail, maxLines: 2, overflow: TextOverflow.ellipsis),
+        subtitle: Text(
+          clip.detail,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+        ),
         trailing: IconButton(
           key: Key('pin-${clip.id}'),
           tooltip: clip.pinned ? 'Unpin ${clip.title}' : 'Pin ${clip.title}',

@@ -7,13 +7,15 @@ void main() {
     expect(store.visibleClips.first.id, 'deploy-command');
 
     store.setPinnedOnly(true);
-    expect(store.visibleClips.map((clip) => clip.id), <String>['deploy-command']);
+    expect(store.visibleClips.map((clip) => clip.id), <String>[
+      'deploy-command',
+    ]);
 
     store.togglePinned('design-reference');
-    expect(
-      store.visibleClips.map((clip) => clip.id).toSet(),
-      <String>{'deploy-command', 'design-reference'},
-    );
+    expect(store.visibleClips.map((clip) => clip.id).toSet(), <String>{
+      'deploy-command',
+      'design-reference',
+    });
   });
 
   test('search covers title, detail, and kind', () {
