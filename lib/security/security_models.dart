@@ -34,9 +34,7 @@ final class PinKdfPolicy {
       throw const FormatException('unsupported PIN KDF policy');
     }
     if (memoryKib < 8192 || memoryKib > 1048576) {
-      throw const FormatException(
-        'PIN KDF memory is outside supported bounds',
-      );
+      throw const FormatException('PIN KDF memory is outside supported bounds');
     }
     if (iterations < 1 ||
         iterations > 20 ||
@@ -69,9 +67,7 @@ final class LocalUnlockPolicy {
 
   void validate() {
     if (pinEnabled && pinKdf == null) {
-      throw const FormatException(
-        'PIN unlock requires a bounded KDF policy',
-      );
+      throw const FormatException('PIN unlock requires a bounded KDF policy');
     }
     pinKdf?.validate();
   }
@@ -117,8 +113,7 @@ final class DeviceSummary {
     if (deviceListRevision < 1) {
       throw const FormatException('device_list_revision must be positive');
     }
-    if (identityKeyFingerprint.isEmpty ||
-        identityKeyFingerprint.length > 128) {
+    if (identityKeyFingerprint.isEmpty || identityKeyFingerprint.length > 128) {
       throw const FormatException('identity-key fingerprint is invalid');
     }
     localUnlock.validate();
@@ -145,8 +140,7 @@ bool deviceTransitionAllowed(
       to == DeviceLifecycleState.suspended ||
           to == DeviceLifecycleState.revoked,
     DeviceLifecycleState.suspended =>
-      to == DeviceLifecycleState.active ||
-          to == DeviceLifecycleState.revoked,
+      to == DeviceLifecycleState.active || to == DeviceLifecycleState.revoked,
     DeviceLifecycleState.revoked => false,
   };
 }
