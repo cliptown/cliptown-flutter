@@ -107,8 +107,7 @@ class ClipTownHome extends StatelessWidget {
                         }
                         return ListView.separated(
                           itemCount: clips.length,
-                          separatorBuilder: (_, _) =>
-                              const SizedBox(height: 8),
+                          separatorBuilder: (_, _) => const SizedBox(height: 8),
                           itemBuilder: (context, index) => _ClipCard(
                             clip: clips[index],
                             onTogglePinned: () =>
