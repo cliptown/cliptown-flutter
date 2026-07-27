@@ -125,7 +125,7 @@ jobs:
           arch: x86_64
           profile: pixel_6
           disable-animations: true
-          script: cd cliptown-flutter && flutter test integration_test -d emulator-5554 --reporter=expanded
+          script: cd cliptown-flutter && flutter test integration_test/app_test.dart -d emulator-5554 --reporter=expanded
 
   ios-simulator:
     runs-on: macos-latest
@@ -145,12 +145,37 @@ jobs:
       - name: Build iOS simulator application
         working-directory: cliptown-flutter
         run: flutter pub get && flutter build ios --simulator
-      - name: Boot an available iPhone simulator and run integration tests
+      - name: Boot an available iPhone simulator and run integration test
+        id: ios_test
+        continue-on-error: true
         shell: bash
         working-directory: cliptown-flutter
         run: |
-          DEVICE_ID=$(xcrun simctl list devices available | awk -F '[()]' '/iPhone.*\((Booted|Shutdown)\)/ {print $2; exit}')
-          test -n "$DEVICE_ID"
+          xcrun simctl list devices available | tee simctl-devices.txt
+          DEVICE_ID=$(python3 - <<'PY'
+          import re
+          text = open('simctl-devices.txt', encoding='utf-8').read()
+          match = re.search(r'iPhone[^\n]*\(([0-9A-Fa-f-]{36})\) \((?:Booted|Shutdown)\)', text)
+          if not match:
+              raise SystemExit('no available iPhone simulator found')
+          print(match.group(1))
+          PY
+          )
           xcrun simctl boot "$DEVICE_ID" || true
           xcrun simctl bootstatus "$DEVICE_ID" -b
-          flutter test integration_test -d "$DEVICE_ID" --reporter=expanded
+          flutter devices --machine | tee flutter-devices.json
+          flutter test integration_test/app_test.dart -d "$DEVICE_ID" --reporter=expanded 2>&1 | tee ios-integration.txt
+      - name: Upload iOS simulator diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-simulator-diagnostics
+          path: |
+            cliptown-flutter/simctl-devices.txt
+            cliptown-flutter/flutter-devices.json
+            cliptown-flutter/ios-integration.txt
+          if-no-files-found: warn
+      - name: Enforce iOS integration result
+        if: steps.ios_test.outcome == 'failure'
+        working-directory: cliptown-flutter
+        run: cat ios-integration.txt 2>/dev/null || true; exit 1
