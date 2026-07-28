@@ -23,4 +23,8 @@ The machine-readable source of truth is [`platform-capabilities.json`](platform-
 4. Signing, notarization, store submission, and production downloads remain false until reviewed credentials and release evidence exist.
 5. A capability marked `verified` must name repository evidence exercised by CI.
 
+## Validation
+
+`test/platform_capabilities_test.dart` parses the JSON source during the normal Flutter quality job. It rejects unknown states, missing permission or platform-boundary explanations, unsupported mobile background-capture claims, unevidenced verified claims, and premature release-readiness claims. The same pull request must continue to pass desktop builds and Android/iOS integration jobs.
+
 The contract describes platform feasibility and current evidence only. It does not grant permissions, add entitlements, enable background capture, publish binaries, or authorize store submission.
