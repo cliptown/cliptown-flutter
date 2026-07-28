@@ -53,7 +53,30 @@ jobs:
           extra_nix_config: |
             experimental-features = nix-command flakes
 
-      - name: Validate Nix and agent contract
+      - name: Reject whitespace errors and conflict markers
+        run: |
+          nix develop -c git diff --check
+          if nix develop -c git grep -nE '^(<<<<<<<|=======|>>>>>>>)' -- .; then
+            echo 'unresolved Git conflict marker found' >&2
+            exit 1
+          fi
+
+      - name: Check Nix formatting
+        run: nix develop -c nixfmt --check flake.nix .nix/dev-shell.nix
+
+      - name: Lint the agent shell
+        run: nix develop -c shellcheck .nix/agent-check.sh
+
+      - name: Check the agent shell formatting
+        run: nix develop -c shfmt -i 2 -ci -d .nix/agent-check.sh
+
+      - name: Validate GitHub Actions
+        run: nix develop -c actionlint .github/workflows/test.yml .github/workflows/nix.yml
+
+      - name: Evaluate and build flake checks
+        run: nix develop -c nix flake check --show-trace
+
+      - name: Prove the bundled preflight entrypoint
         run: nix develop -c agent-check preflight
 
       - name: Resolve pinned sibling workspace
