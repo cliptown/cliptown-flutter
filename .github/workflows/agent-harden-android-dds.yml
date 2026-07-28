@@ -1,0 +1,55 @@
+name: harden Android integration-test DDS boundary
+
+on:
+  push:
+    branches:
+      - agent/den-42-security-center-v2
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/den-42-security-center-v2
+          fetch-depth: 0
+      - name: Disable DDS only for Android device integration tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('.github/workflows/test.yml')
+          source = path.read_text()
+          replacements = {
+              'flutter test integration_test/app_test.dart -d emulator-5554 --reporter=expanded':
+                  'flutter test integration_test/app_test.dart -d emulator-5554 --no-dds --reporter=expanded',
+              'flutter test integration_test/security_center_smoke_test.dart -d emulator-5554 --reporter=expanded':
+                  'flutter test integration_test/security_center_smoke_test.dart -d emulator-5554 --no-dds --reporter=expanded',
+          }
+          for old, new in replacements.items():
+              count = source.count(old)
+              if count != 1:
+                  raise SystemExit(f'expected exactly one Android test command {old!r}, found {count}')
+              source = source.replace(old, new, 1)
+          path.write_text(source)
+          PY
+          grep -Fq 'integration_test/app_test.dart -d emulator-5554 --no-dds' .github/workflows/test.yml
+          grep -Fq 'integration_test/security_center_smoke_test.dart -d emulator-5554 --no-dds' .github/workflows/test.yml
+          rm .github/workflows/agent-harden-android-dds.yml
+          git diff --check
+          if grep -RInE '^(<<<<<<<|=======|>>>>>>>)' --exclude-dir=.git .; then
+            echo 'git conflict marker detected' >&2
+            exit 1
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A .github/workflows/test.yml .github/workflows/agent-harden-android-dds.yml
+          git commit -m 'ci: disable DDS for Android device integration tests'
+          git push origin HEAD:agent/den-42-security-center-v2
