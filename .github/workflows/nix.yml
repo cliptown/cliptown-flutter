@@ -37,6 +37,21 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  actionlint-diagnostic:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out Flutter repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+          show-progress: false
+
+      - name: Validate GitHub Actions with concise diagnostics
+        uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+        with:
+          args: .github/workflows/test.yml .github/workflows/nix.yml
+
   check:
     runs-on: ubuntu-latest
     timeout-minutes: 60
