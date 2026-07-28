@@ -8,9 +8,7 @@ Map<String, Object?> _map(Object? value) =>
 
 void main() {
   final document = _map(
-    jsonDecode(
-      File('docs/platform-capabilities.json').readAsStringSync(),
-    ),
+    jsonDecode(File('docs/platform-capabilities.json').readAsStringSync()),
   );
   final platforms = _map(document['platforms']);
   final allowedConstraints = (document['constraint_states']! as List<Object?>)
