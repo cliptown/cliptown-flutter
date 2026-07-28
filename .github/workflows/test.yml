@@ -172,7 +172,16 @@ jobs:
             > cliptown-flutter/android-emulator.log 2>&1 &
           echo "$!" > cliptown-flutter/android-emulator.pid
           "$ADB" start-server
-          timeout 900 bash -c 'until "$ADB" -s emulator-5554 shell getprop sys.boot_completed 2>/dev/null | tr -d "\r" | grep -q "^1$"; do sleep 5; done'
+          deadline=$((SECONDS + 900))
+          until "$ADB" -s emulator-5554 shell getprop sys.boot_completed 2>/dev/null \
+            | tr -d "\r" \
+            | grep -q '^1$'; do
+            if ((SECONDS >= deadline)); then
+              echo 'Android emulator did not finish booting within 900 seconds.' >&2
+              exit 124
+            fi
+            sleep 5
+          done
           "$ADB" -s emulator-5554 wait-for-device
           "$ADB" -s emulator-5554 shell settings put global window_animation_scale 0
           "$ADB" -s emulator-5554 shell settings put global transition_animation_scale 0

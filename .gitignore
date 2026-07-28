@@ -33,6 +33,11 @@ migrate_working_dir/
 /build/
 /coverage/
 
+# Repository-local Nix agent state
+.cache/
+.direnv/
+result
+
 # Symbolication related
 app.*.symbols
 
