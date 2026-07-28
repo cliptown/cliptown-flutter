@@ -1,0 +1,232 @@
+{
+  "schema_version": 1,
+  "constraint_states": [
+    "available",
+    "permission_gated",
+    "foreground_only",
+    "impossible"
+  ],
+  "implementation_states": [
+    "planned",
+    "foundation",
+    "verified"
+  ],
+  "release_state": {
+    "signed": false,
+    "store_submitted": false,
+    "production_downloads": false
+  },
+  "platforms": {
+    "macos": {
+      "capabilities": {
+        "search_and_pin": {
+          "constraint": "available",
+          "implementation": "foundation",
+          "evidence": ["test/clip_store_test.dart", "test/cliptown_app_test.dart"]
+        },
+        "clipboard_monitoring": {
+          "constraint": "permission_gated",
+          "implementation": "planned",
+          "permission_notes": "Capture must be explicit, visible, pausable, and compatible with macOS privacy controls."
+        },
+        "tray_or_menu_bar": {
+          "constraint": "available",
+          "implementation": "planned"
+        },
+        "global_shortcut": {
+          "constraint": "permission_gated",
+          "implementation": "planned",
+          "permission_notes": "Shortcut registration and any Accessibility access require clear onboarding and revocation UI."
+        },
+        "background_capture": {
+          "constraint": "permission_gated",
+          "implementation": "planned",
+          "permission_notes": "Only while the installed app is running with user-visible controls; never as hidden surveillance."
+        },
+        "secure_storage": {
+          "constraint": "available",
+          "implementation": "planned"
+        },
+        "native_build": {
+          "constraint": "available",
+          "implementation": "verified",
+          "evidence": [".github/workflows/test.yml"]
+        },
+        "signed_distribution": {
+          "constraint": "permission_gated",
+          "implementation": "planned",
+          "permission_notes": "Developer ID signing and notarization credentials are not configured."
+        }
+      }
+    },
+    "windows": {
+      "capabilities": {
+        "search_and_pin": {
+          "constraint": "available",
+          "implementation": "foundation",
+          "evidence": ["test/clip_store_test.dart", "test/cliptown_app_test.dart"]
+        },
+        "clipboard_monitoring": {
+          "constraint": "permission_gated",
+          "implementation": "planned",
+          "permission_notes": "Capture requires visible user controls, per-application exclusions, and protected-content filtering."
+        },
+        "tray_or_menu_bar": {
+          "constraint": "available",
+          "implementation": "planned"
+        },
+        "global_shortcut": {
+          "constraint": "available",
+          "implementation": "planned"
+        },
+        "background_capture": {
+          "constraint": "permission_gated",
+          "implementation": "planned",
+          "permission_notes": "Only while the installed application is running with clear pause and exit controls."
+        },
+        "secure_storage": {
+          "constraint": "available",
+          "implementation": "planned"
+        },
+        "native_build": {
+          "constraint": "available",
+          "implementation": "verified",
+          "evidence": [".github/workflows/test.yml"]
+        },
+        "signed_distribution": {
+          "constraint": "permission_gated",
+          "implementation": "planned",
+          "permission_notes": "Code-signing and installer reputation credentials are not configured."
+        }
+      }
+    },
+    "linux": {
+      "capabilities": {
+        "search_and_pin": {
+          "constraint": "available",
+          "implementation": "foundation",
+          "evidence": ["test/clip_store_test.dart", "test/cliptown_app_test.dart"]
+        },
+        "clipboard_monitoring": {
+          "constraint": "permission_gated",
+          "implementation": "planned",
+          "permission_notes": "Wayland and X11 differ; capture must use the active desktop protocol and explicit user controls."
+        },
+        "tray_or_menu_bar": {
+          "constraint": "permission_gated",
+          "implementation": "planned",
+          "permission_notes": "Desktop-environment tray support varies and must degrade safely."
+        },
+        "global_shortcut": {
+          "constraint": "permission_gated",
+          "implementation": "planned",
+          "permission_notes": "Desktop portal or compositor support may be required."
+        },
+        "background_capture": {
+          "constraint": "permission_gated",
+          "implementation": "planned",
+          "permission_notes": "Only while the installed application is running with visible pause and exit controls."
+        },
+        "secure_storage": {
+          "constraint": "permission_gated",
+          "implementation": "planned",
+          "permission_notes": "A compatible Secret Service or desktop keyring must be available."
+        },
+        "native_build": {
+          "constraint": "available",
+          "implementation": "verified",
+          "evidence": [".github/workflows/test.yml"]
+        },
+        "signed_distribution": {
+          "constraint": "permission_gated",
+          "implementation": "planned",
+          "permission_notes": "Package formats, repository signing, and update channels are not selected."
+        }
+      }
+    },
+    "ios": {
+      "capabilities": {
+        "search_and_pin": {
+          "constraint": "available",
+          "implementation": "foundation",
+          "evidence": ["integration_test/app_test.dart"]
+        },
+        "clipboard_monitoring": {
+          "constraint": "foreground_only",
+          "implementation": "planned",
+          "reason": "iOS does not permit a general hidden clipboard-history daemon; reads must occur in an explicit foreground or extension interaction."
+        },
+        "share_extension": {
+          "constraint": "available",
+          "implementation": "planned"
+        },
+        "keyboard_extension": {
+          "constraint": "permission_gated",
+          "implementation": "planned",
+          "permission_notes": "Keyboard installation and any expanded access require explicit system and user approval."
+        },
+        "background_capture": {
+          "constraint": "impossible",
+          "implementation": "planned",
+          "reason": "A continuously running general-purpose clipboard capture service is not an allowed iOS application model."
+        },
+        "secure_storage": {
+          "constraint": "available",
+          "implementation": "planned"
+        },
+        "native_build": {
+          "constraint": "available",
+          "implementation": "verified",
+          "evidence": [".github/workflows/test.yml", "integration_test/app_test.dart"]
+        },
+        "signed_distribution": {
+          "constraint": "permission_gated",
+          "implementation": "planned",
+          "permission_notes": "Apple signing, entitlements, privacy metadata, and App Store review are not configured."
+        }
+      }
+    },
+    "android": {
+      "capabilities": {
+        "search_and_pin": {
+          "constraint": "available",
+          "implementation": "foundation",
+          "evidence": ["integration_test/app_test.dart"]
+        },
+        "clipboard_monitoring": {
+          "constraint": "foreground_only",
+          "implementation": "planned",
+          "reason": "Modern Android restricts background clipboard access; capture must use a foreground surface, share target, or approved input method."
+        },
+        "share_target": {
+          "constraint": "available",
+          "implementation": "planned"
+        },
+        "input_method": {
+          "constraint": "permission_gated",
+          "implementation": "planned",
+          "permission_notes": "Users must explicitly enable the ClipTown input method in system settings."
+        },
+        "background_capture": {
+          "constraint": "foreground_only",
+          "implementation": "planned",
+          "reason": "Any sustained work must use a user-visible foreground component and still obey clipboard privacy restrictions."
+        },
+        "secure_storage": {
+          "constraint": "available",
+          "implementation": "planned"
+        },
+        "native_build": {
+          "constraint": "available",
+          "implementation": "verified",
+          "evidence": [".github/workflows/test.yml", "integration_test/app_test.dart"]
+        },
+        "signed_distribution": {
+          "constraint": "permission_gated",
+          "implementation": "planned",
+          "permission_notes": "Play signing, privacy disclosures, testing tracks, and store review are not configured."
+        }
+      }
+    }
+  }
+}
