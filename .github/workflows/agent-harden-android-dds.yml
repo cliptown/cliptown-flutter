@@ -46,10 +46,7 @@ jobs:
           grep -Fq 'integration_test/security_center_smoke_test.dart -d emulator-5554 --no-dds' .github/workflows/test.yml
           rm .github/workflows/agent-harden-android-dds.yml
           git diff --check
-          if grep -RInE '^(<<<<<<<|=======|>>>>>>>)' --exclude-dir=.git .; then
-            echo 'git conflict marker detected' >&2
-            exit 1
-          fi
+          test -z "$(git diff --name-only --diff-filter=U)"
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add -A .github/workflows/test.yml .github/workflows/agent-harden-android-dds.yml
