@@ -1,6 +1,8 @@
 name: harden Android integration-test DDS boundary
 
 on:
+  pull_request:
+    branches: [main]
   push:
     branches:
       - agent/den-42-security-center-v2
@@ -10,7 +12,7 @@ permissions:
 
 jobs:
   patch:
-    if: github.actor != 'github-actions[bot]'
+    if: github.actor != 'github-actions[bot]' && (github.event_name == 'push' || github.event.pull_request.head.ref == 'agent/den-42-security-center-v2')
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
