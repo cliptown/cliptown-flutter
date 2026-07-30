@@ -25,6 +25,6 @@ The machine-readable source of truth is [`platform-capabilities.json`](platform-
 
 ## Validation
 
-`test/platform_capabilities_test.dart` parses the JSON source during the normal Flutter quality job. It rejects unknown states, missing permission or platform-boundary explanations, unsupported mobile background-capture claims, unevidenced verified claims, and premature release-readiness claims. The same pull request must continue to pass desktop builds and Android/iOS integration jobs.
+`test/platform_capabilities_test.dart` parses the JSON source during the normal Flutter quality job. It rejects unknown states, missing permission or platform-boundary explanations, unsupported mobile background-capture claims, unevidenced verified claims, and premature release-readiness claims. The same pull request must continue to pass the current `main` branch's pinned Nix agent contract, desktop builds, and Android/iOS integration jobs.
 
 The contract describes platform feasibility and current evidence only. It does not grant permissions, add entitlements, enable background capture, publish binaries, or authorize store submission.
