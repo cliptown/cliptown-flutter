@@ -127,7 +127,11 @@ jobs:
             | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
-          ls -l /dev/kvm
+          if [[ -e /dev/kvm ]]; then
+            ls -l /dev/kvm
+          else
+            echo '/dev/kvm is unavailable; emulator will fall back to software acceleration.'
+          fi
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
