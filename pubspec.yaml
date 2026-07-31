@@ -1,5 +1,5 @@
 name: cliptown_app
-description: Cross-platform ClipTown clipboard history client.
+description: Encrypted cross-platform ClipTown clipboard history and device sync client.
 publish_to: none
 version: 0.1.0+1
 

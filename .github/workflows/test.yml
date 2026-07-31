@@ -10,7 +10,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: flutter-${{ github.ref }}
+  group: flutter-ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 env:
@@ -20,21 +20,25 @@ jobs:
   quality:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           path: cliptown-flutter
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           repository: cliptown/cliptown-interfaces
           ref: ${{ env.CLIPTOWN_INTERFACES_REF }}
           path: cliptown-interfaces
-      - uses: subosito/flutter-action@v2
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
         with:
           channel: stable
           cache: true
       - name: Resolve dependencies
         working-directory: cliptown-flutter
         run: flutter pub get
+      - name: Verify dependency lockfile is current
+        shell: bash
+        working-directory: cliptown-flutter
+        run: git diff --exit-code -- pubspec.lock
       - name: Verify formatting
         working-directory: cliptown-flutter
         run: |
@@ -78,10 +82,10 @@ jobs:
             target: windows
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           path: cliptown-flutter
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           repository: cliptown/cliptown-interfaces
           ref: ${{ env.CLIPTOWN_INTERFACES_REF }}
@@ -89,7 +93,7 @@ jobs:
       - name: Install Linux desktop dependencies
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y ninja-build libgtk-3-dev
-      - uses: subosito/flutter-action@v2
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
         with:
           channel: stable
           cache: true
@@ -105,10 +109,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           path: cliptown-flutter
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           repository: cliptown/cliptown-interfaces
           ref: ${{ env.CLIPTOWN_INTERFACES_REF }}
@@ -127,8 +131,12 @@ jobs:
             | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
-          ls -l /dev/kvm
-      - uses: subosito/flutter-action@v2
+          if [[ -e /dev/kvm ]]; then
+            ls -l /dev/kvm
+          else
+            echo '/dev/kvm is unavailable; emulator will fall back to software acceleration.'
+          fi
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
         with:
           channel: stable
           cache: true
@@ -225,15 +233,15 @@ jobs:
     runs-on: macos-latest
     timeout-minutes: 35
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           path: cliptown-flutter
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           repository: cliptown/cliptown-interfaces
           ref: ${{ env.CLIPTOWN_INTERFACES_REF }}
           path: cliptown-interfaces
-      - uses: subosito/flutter-action@v2
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
         with:
           channel: stable
           cache: true
