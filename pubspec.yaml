@@ -12,6 +12,7 @@ dependencies:
   cupertino_icons: ^1.0.8
   cliptown_interfaces:
     path: ../cliptown-interfaces/generated/dart
+  screen_retriever: ^0.2.2
   supabase_flutter: ^2.16.0
   tray_manager: ^0.5.3
   window_manager: ^0.5.2

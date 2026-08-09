@@ -28,8 +28,10 @@ class DesktopLifecycleHost with WindowListener, TrayListener {
 
   final DesktopLifecycleController controller;
   bool _trayReady = false;
+  Future<void> _windowReady = Future<void>.value();
 
   bool get trayReady => _trayReady;
+  Future<void> get windowReady => _windowReady;
 
   Future<bool> initialize() async {
     await windowManager.ensureInitialized();
@@ -60,10 +62,25 @@ class DesktopLifecycleHost with WindowListener, TrayListener {
       title: 'ClipTown',
       titleBarStyle: TitleBarStyle.normal,
     );
-    unawaited(
-      windowManager.waitUntilReadyToShow(options, controller.openMainWindow),
+    _windowReady = windowManager.waitUntilReadyToShow(
+      options,
+      controller.openMainWindow,
     );
+    unawaited(_windowReady);
     return _trayReady;
+  }
+
+  Future<void> dispose() async {
+    windowManager.removeListener(this);
+    trayManager.removeListener(this);
+
+    final trayWasReady = _trayReady;
+    _trayReady = false;
+    try {
+      if (trayWasReady) await trayManager.destroy();
+    } finally {
+      await windowManager.setPreventClose(false);
+    }
   }
 
   Future<void> _configureTray() async {

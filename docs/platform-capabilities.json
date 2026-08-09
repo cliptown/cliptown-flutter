@@ -37,7 +37,7 @@
         "background_window_lifecycle": {
           "constraint": "available",
           "implementation": "foundation",
-          "evidence": ["lib/desktop/desktop_lifecycle_controller.dart", "test/desktop_lifecycle_controller_test.dart"]
+          "evidence": ["lib/desktop/desktop_lifecycle_controller.dart", "test/desktop_lifecycle_controller_test.dart", "integration_test/desktop_lifecycle_test.dart"]
         },
         "global_shortcut": {
           "constraint": "permission_gated",
@@ -85,7 +85,7 @@
         "background_window_lifecycle": {
           "constraint": "available",
           "implementation": "foundation",
-          "evidence": ["lib/desktop/desktop_lifecycle_controller.dart", "test/desktop_lifecycle_controller_test.dart"]
+          "evidence": ["lib/desktop/desktop_lifecycle_controller.dart", "test/desktop_lifecycle_controller_test.dart", "integration_test/desktop_lifecycle_test.dart"]
         },
         "global_shortcut": {
           "constraint": "available",
@@ -134,7 +134,7 @@
           "constraint": "permission_gated",
           "implementation": "foundation",
           "permission_notes": "Close-to-background is enabled only after tray initialization succeeds.",
-          "evidence": ["lib/desktop/desktop_lifecycle_controller.dart", "test/desktop_lifecycle_controller_test.dart"]
+          "evidence": ["lib/desktop/desktop_lifecycle_controller.dart", "test/desktop_lifecycle_controller_test.dart", "integration_test/desktop_lifecycle_test.dart"]
         },
         "global_shortcut": {
           "constraint": "permission_gated",
