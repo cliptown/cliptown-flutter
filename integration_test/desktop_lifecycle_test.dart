@@ -10,47 +10,45 @@ import 'package:window_manager/window_manager.dart';
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
+  final isDesktopHost =
+      Platform.isMacOS || Platform.isWindows || Platform.isLinux;
 
-  testWidgets('native close backgrounds and tray action restores full window', (
-    tester,
-  ) async {
-    expect(
-      Platform.isMacOS || Platform.isWindows || Platform.isLinux,
-      isTrue,
-      reason: 'This integration test must run on a desktop host.',
-    );
+  testWidgets(
+    'native close backgrounds and tray action restores full window',
+    (tester) async {
+      final host = DesktopLifecycleHost();
+      final trayReady = await host.initialize();
+      addTearDown(host.dispose);
 
-    final host = DesktopLifecycleHost();
-    final trayReady = await host.initialize();
-    addTearDown(host.dispose);
+      await tester.pumpWidget(ClipTownApp(desktopBackgroundEnabled: trayReady));
+      await host.windowReady;
+      await tester.pumpAndSettle();
 
-    await tester.pumpWidget(ClipTownApp(desktopBackgroundEnabled: trayReady));
-    await host.windowReady;
-    await tester.pumpAndSettle();
+      expect(await windowManager.isVisible(), isTrue);
+      expect(await windowManager.getSize(), defaultDesktopWindowSize);
 
-    expect(await windowManager.isVisible(), isTrue);
-    expect(await windowManager.getSize(), defaultDesktopWindowSize);
+      if (trayReady) {
+        await windowManager.close();
+      } else {
+        // Headless Linux runners may have AppIndicator libraries without a
+        // status-item host. Exercise the same background transition directly.
+        await host.controller.handleWindowCloseRequested();
+      }
+      await _waitForWindowVisibility(false);
 
-    if (trayReady) {
-      await windowManager.close();
-    } else {
-      // Headless Linux runners may have AppIndicator libraries without a
-      // status-item host. Exercise the same background transition directly.
-      await host.controller.handleWindowCloseRequested();
-    }
-    await _waitForWindowVisibility(false);
+      expect(await windowManager.isSkipTaskbar(), isTrue);
+      expect(host.controller.isQuitting, isFalse);
 
-    expect(await windowManager.isSkipTaskbar(), isTrue);
-    expect(host.controller.isQuitting, isFalse);
+      await host.controller.handleTrayAction(DesktopTrayAction.open);
+      await _waitForWindowVisibility(true);
 
-    await host.controller.handleTrayAction(DesktopTrayAction.open);
-    await _waitForWindowVisibility(true);
-
-    expect(await windowManager.isSkipTaskbar(), isFalse);
-    expect(await windowManager.getSize(), defaultDesktopWindowSize);
-    expect(await windowManager.isFocused(), isTrue);
-    await _expectCenteredOnPrimaryDisplay();
-  });
+      expect(await windowManager.isSkipTaskbar(), isFalse);
+      expect(await windowManager.getSize(), defaultDesktopWindowSize);
+      expect(await windowManager.isFocused(), isTrue);
+      await _expectCenteredOnPrimaryDisplay();
+    },
+    skip: !isDesktopHost,
+  );
 }
 
 Future<void> _waitForWindowVisibility(bool expected) async {

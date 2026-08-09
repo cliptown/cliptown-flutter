@@ -208,7 +208,10 @@ jobs:
           cd cliptown-flutter
           flutter devices --machine | tee android-devices.json
           {
-            flutter test integration_test -d emulator-5554 --reporter=expanded
+            flutter test integration_test/app_test.dart \
+              -d emulator-5554 --reporter=expanded
+            flutter test integration_test/security_center_smoke_test.dart \
+              -d emulator-5554 --reporter=expanded
           } 2>&1 | tee android-integration.txt
       - name: Capture Android diagnostics
         if: always()
