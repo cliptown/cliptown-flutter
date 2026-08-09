@@ -1,0 +1,29 @@
+[package]
+org = "cliptown"
+name = "cliptown-flutter"
+version = "0.1.0"
+description = "Encrypted cross-platform ClipTown clipboard history and device synchronization UI"
+license = "MIT"
+language = "dart"
+
+[package.repository]
+vcs = "git"
+url = "https://github.com/cliptown/cliptown-flutter"
+
+[install]
+dir = ".vendor/.zed"
+
+[dependencies]
+"cliptown/cliptown-clients" = "^0.1.0"
+"cliptown/cliptown-interfaces" = "^0.1.0"
+# Keep this draft blocked until cliptown-monorepo#15 creates and publishes them.
+"cliptown/cliptown-lib" = "^0.1.0"
+"cliptown/cliptown-sync" = "^0.1.0"
+
+[publish]
+include_readme = true
+tag_format = "v{version}"
+exclude = [".env", ".env.*", ".dart_tool/**", "build/**", "node_modules/**", "tmp/**", "**/*.log", ".vendor/.zed/**", ".DS_Store"]
+
+[scripts]
+test = "flutter test"
