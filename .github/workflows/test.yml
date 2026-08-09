@@ -270,6 +270,7 @@ jobs:
         shell: bash
         working-directory: cliptown-flutter
         run: |
+          set -euo pipefail
           xcrun simctl list devices available | tee simctl-devices.txt
           DEVICE_ID=$(python3 - <<'PY'
           import re
@@ -283,10 +284,62 @@ jobs:
           xcrun simctl boot "$DEVICE_ID" || true
           xcrun simctl bootstatus "$DEVICE_ID" -b
           flutter devices --machine | tee flutter-devices.json
+
+          run_ios_test() {
+            local test_file="$1"
+            local attempt exit_code
+            for attempt in 1 2; do
+              echo "Running $test_file on iOS simulator (attempt $attempt of 2)."
+              if python3 tool/run_with_timeout.py \
+                --timeout-seconds 420 \
+                --label "iOS integration test $test_file" \
+                -- flutter test "$test_file" \
+                  -d "$DEVICE_ID" --reporter=expanded; then
+                return 0
+              else
+                exit_code=$?
+              fi
+
+              if [[ "$exit_code" -ne 124 || "$attempt" -eq 2 ]]; then
+                return "$exit_code"
+              fi
+
+              echo "The Flutter launch stalled; rebooting the simulator before one retry."
+              xcrun simctl shutdown "$DEVICE_ID" || true
+              xcrun simctl boot "$DEVICE_ID"
+              xcrun simctl bootstatus "$DEVICE_ID" -b
+            done
+          }
+
           {
-            flutter test integration_test/app_test.dart -d "$DEVICE_ID" --reporter=expanded
-            flutter test integration_test/security_center_smoke_test.dart -d "$DEVICE_ID" --reporter=expanded
+            run_ios_test integration_test/app_test.dart
+            run_ios_test integration_test/security_center_smoke_test.dart
           } 2>&1 | tee ios-integration.txt
+      - name: Capture iOS simulator diagnostics
+        if: always()
+        shell: bash
+        working-directory: cliptown-flutter
+        run: |
+          if [[ ! -s flutter-devices.json ]]; then
+            echo 'flutter-devices.json is unavailable; skipping Runner log capture.'
+            exit 0
+          fi
+          DEVICE_ID=$(python3 - <<'PY'
+          import json
+          from pathlib import Path
+          devices = json.loads(Path('flutter-devices.json').read_text(encoding='utf-8'))
+          print(next((device['id'] for device in devices if device['targetPlatform'] == 'ios'), ''))
+          PY
+          )
+          if [[ -z "$DEVICE_ID" ]]; then
+            echo 'No iOS simulator was recorded; skipping Runner log capture.'
+            exit 0
+          fi
+          xcrun simctl spawn "$DEVICE_ID" log show \
+            --style compact \
+            --last 20m \
+            --predicate 'process == "Runner"' \
+            > ios-simulator-system.log 2>&1 || true
       - name: Upload iOS simulator diagnostics
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -296,6 +349,7 @@ jobs:
             cliptown-flutter/simctl-devices.txt
             cliptown-flutter/flutter-devices.json
             cliptown-flutter/ios-integration.txt
+            cliptown-flutter/ios-simulator-system.log
           if-no-files-found: warn
       - name: Enforce iOS integration result
         if: steps.ios_test.outcome == 'failure'
