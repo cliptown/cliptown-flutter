@@ -22,9 +22,11 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
+          persist-credentials: false
           path: cliptown-flutter
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
+          persist-credentials: false
           repository: cliptown/cliptown-interfaces
           ref: ${{ env.CLIPTOWN_INTERFACES_REF }}
           path: cliptown-interfaces
@@ -84,9 +86,11 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
+          persist-credentials: false
           path: cliptown-flutter
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
+          persist-credentials: false
           repository: cliptown/cliptown-interfaces
           ref: ${{ env.CLIPTOWN_INTERFACES_REF }}
           path: cliptown-interfaces
@@ -116,9 +120,11 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
+          persist-credentials: false
           path: cliptown-flutter
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
+          persist-credentials: false
           repository: cliptown/cliptown-interfaces
           ref: ${{ env.CLIPTOWN_INTERFACES_REF }}
           path: cliptown-interfaces
@@ -240,9 +246,11 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
+          persist-credentials: false
           path: cliptown-flutter
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
+          persist-credentials: false
           repository: cliptown/cliptown-interfaces
           ref: ${{ env.CLIPTOWN_INTERFACES_REF }}
           path: cliptown-interfaces
