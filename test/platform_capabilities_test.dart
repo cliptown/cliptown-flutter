@@ -120,6 +120,31 @@ void main() {
     );
   });
 
+  test('desktop tray lifecycle is implemented without claiming capture', () {
+    for (final platform in <String>['macos', 'windows', 'linux']) {
+      final capabilities = _map(_map(platforms[platform])['capabilities']);
+      expect(
+        _map(capabilities['tray_or_menu_bar'])['implementation'],
+        'foundation',
+      );
+      expect(
+        _map(capabilities['background_window_lifecycle'])['implementation'],
+        'foundation',
+      );
+      expect(
+        _map(capabilities['background_capture'])['implementation'],
+        'planned',
+        reason: '$platform tray behavior must not overclaim clipboard capture',
+      );
+    }
+
+    for (final platform in <String>['ios', 'android']) {
+      final capabilities = _map(_map(platforms[platform])['capabilities']);
+      expect(capabilities, isNot(contains('tray_or_menu_bar')));
+      expect(capabilities, isNot(contains('background_window_lifecycle')));
+    }
+  });
+
   test('signed distribution remains gated on every platform', () {
     for (final platformEntry in platforms.entries) {
       final capabilities = _map(_map(platformEntry.value)['capabilities']);

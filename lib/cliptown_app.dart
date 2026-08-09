@@ -3,9 +3,14 @@ import 'package:flutter/material.dart';
 import 'src/clip_store.dart';
 
 class ClipTownApp extends StatefulWidget {
-  const ClipTownApp({super.key, this.store});
+  const ClipTownApp({
+    super.key,
+    this.store,
+    this.desktopBackgroundEnabled = false,
+  });
 
   final ClipStore? store;
+  final bool desktopBackgroundEnabled;
 
   @override
   State<ClipTownApp> createState() => _ClipTownAppState();
@@ -34,25 +39,40 @@ class _ClipTownAppState extends State<ClipTownApp> {
         scaffoldBackgroundColor: const Color(0xff030914),
         useMaterial3: true,
       ),
-      home: ClipTownHome(store: store),
+      home: ClipTownHome(
+        store: store,
+        desktopBackgroundEnabled: widget.desktopBackgroundEnabled,
+      ),
     );
   }
 }
 
 class ClipTownHome extends StatelessWidget {
-  const ClipTownHome({super.key, required this.store});
+  const ClipTownHome({
+    super.key,
+    required this.store,
+    this.desktopBackgroundEnabled = false,
+  });
 
   final ClipStore store;
+  final bool desktopBackgroundEnabled;
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: const Text('ClipTown'),
-        actions: const <Widget>[
+        actions: <Widget>[
           Padding(
-            padding: EdgeInsets.only(right: 16),
-            child: Center(child: Text('Local preview • sync disconnected')),
+            padding: const EdgeInsets.only(right: 16),
+            child: Center(
+              child: Text(
+                desktopBackgroundEnabled
+                    ? 'Tray active • close keeps ClipTown running'
+                    : 'Local preview • sync disconnected',
+                key: const Key('desktop-background-status'),
+              ),
+            ),
           ),
         ],
       ),
