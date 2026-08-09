@@ -18,6 +18,19 @@ void main() {
     expect(find.text('Deploy command'), findsNothing);
   });
 
+  testWidgets('shows explicit background status when tray mode is active', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      ClipTownApp(store: ClipStore(), desktopBackgroundEnabled: true),
+    );
+
+    expect(
+      find.text('Tray active • close keeps ClipTown running'),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('pin button updates pinned-only results', (tester) async {
     final store = ClipStore();
     await tester.pumpWidget(ClipTownApp(store: store));

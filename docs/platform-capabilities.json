@@ -31,7 +31,13 @@
         },
         "tray_or_menu_bar": {
           "constraint": "available",
-          "implementation": "planned"
+          "implementation": "foundation",
+          "evidence": ["lib/desktop/desktop_lifecycle_host.dart", "test/desktop_lifecycle_controller_test.dart"]
+        },
+        "background_window_lifecycle": {
+          "constraint": "available",
+          "implementation": "foundation",
+          "evidence": ["lib/desktop/desktop_lifecycle_controller.dart", "test/desktop_lifecycle_controller_test.dart"]
         },
         "global_shortcut": {
           "constraint": "permission_gated",
@@ -73,7 +79,13 @@
         },
         "tray_or_menu_bar": {
           "constraint": "available",
-          "implementation": "planned"
+          "implementation": "foundation",
+          "evidence": ["lib/desktop/desktop_lifecycle_host.dart", "test/desktop_lifecycle_controller_test.dart"]
+        },
+        "background_window_lifecycle": {
+          "constraint": "available",
+          "implementation": "foundation",
+          "evidence": ["lib/desktop/desktop_lifecycle_controller.dart", "test/desktop_lifecycle_controller_test.dart"]
         },
         "global_shortcut": {
           "constraint": "available",
@@ -114,8 +126,15 @@
         },
         "tray_or_menu_bar": {
           "constraint": "permission_gated",
-          "implementation": "planned",
-          "permission_notes": "Desktop-environment tray support varies and must degrade safely."
+          "implementation": "foundation",
+          "permission_notes": "Desktop-environment tray support varies and must degrade safely.",
+          "evidence": ["lib/desktop/desktop_lifecycle_host.dart", ".github/workflows/test.yml"]
+        },
+        "background_window_lifecycle": {
+          "constraint": "permission_gated",
+          "implementation": "foundation",
+          "permission_notes": "Close-to-background is enabled only after tray initialization succeeds.",
+          "evidence": ["lib/desktop/desktop_lifecycle_controller.dart", "test/desktop_lifecycle_controller_test.dart"]
         },
         "global_shortcut": {
           "constraint": "permission_gated",
