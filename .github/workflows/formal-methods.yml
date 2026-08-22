@@ -1,0 +1,221 @@
+name: Formal app lifecycle
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/formal-methods.yml'
+      - 'formal/**'
+      - 'lib/state/**'
+      - 'lib/state.dart'
+      - 'lib/desktop/**'
+      - 'lib/cliptown_app.dart'
+      - 'lib/main.dart'
+      - 'test/app_state_machine_test.dart'
+      - 'test/desktop_lifecycle_controller_test.dart'
+      - 'test/formal_trace_replay_test.dart'
+      - 'test/fixtures/formal-traces/**'
+      - 'test/widget_test.dart'
+      - 'tool/replay_formal_traces.dart'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/formal-methods.yml'
+      - 'formal/**'
+      - 'lib/state/**'
+      - 'lib/state.dart'
+      - 'lib/desktop/**'
+      - 'lib/cliptown_app.dart'
+      - 'lib/main.dart'
+      - 'test/app_state_machine_test.dart'
+      - 'test/desktop_lifecycle_controller_test.dart'
+      - 'test/formal_trace_replay_test.dart'
+      - 'test/fixtures/formal-traces/**'
+      - 'test/widget_test.dart'
+      - 'tool/replay_formal_traces.dart'
+  schedule:
+    - cron: '17 7 * * 3'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: formal-app-lifecycle-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CLIPTOWN_INTERFACES_REF: e4e957b5372dc363fe6a52559c8959f0de781efb
+  QUINT_PACKAGE: '@informalsystems/quint@0.32.0'
+  QUINT_SEED: '0xaa9749ae95a8a5c9'
+
+jobs:
+  app-lifecycle:
+    name: Quint and Dart app lifecycle refinement
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - name: Check out Flutter repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+          path: cliptown-flutter
+
+      - name: Check out pinned interface contract
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+          repository: cliptown/cliptown-interfaces
+          ref: ${{ env.CLIPTOWN_INTERFACES_REF }}
+          path: cliptown-interfaces
+
+      - name: Install Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+
+      - name: Install Flutter
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Resolve Dart dependencies
+        working-directory: cliptown-flutter
+        run: flutter pub get
+
+      - name: Typecheck model and deterministic scenarios
+        working-directory: cliptown-flutter
+        shell: bash
+        run: |
+          mkdir -p .formal-artifacts/typecheck
+          set -o pipefail
+          status=0
+          npx --yes --package="$QUINT_PACKAGE" quint typecheck formal/app_lifecycle.qnt \
+            2>&1 | tee .formal-artifacts/typecheck/app-lifecycle.log || status=$?
+          npx --yes --package="$QUINT_PACKAGE" quint typecheck formal/app_lifecycle_test.qnt \
+            2>&1 | tee .formal-artifacts/typecheck/app-lifecycle-test.log || status=$?
+          exit "$status"
+
+      - name: Run deterministic formal scenarios
+        working-directory: cliptown-flutter
+        shell: bash
+        run: |
+          mkdir -p .formal-artifacts/tests
+          set -o pipefail
+          npx --yes --package="$QUINT_PACKAGE" quint test \
+            formal/app_lifecycle_test.qnt \
+            --main=app_lifecycle_test \
+            --match='.*Test$' \
+            --out-itf='.formal-artifacts/tests/{test}-{seq}.itf.json' \
+            2>&1 | tee .formal-artifacts/tests/quint-test.log
+
+      - name: Explore safety invariant and critical witnesses
+        working-directory: cliptown-flutter
+        shell: bash
+        run: |
+          mkdir -p .formal-artifacts/simulation
+          set -o pipefail
+          npx --yes --package="$QUINT_PACKAGE" quint run \
+            formal/app_lifecycle.qnt \
+            --main=app_lifecycle \
+            --max-samples=15000 \
+            --max-steps=35 \
+            --seed="$QUINT_SEED" \
+            --invariant=app_lifecycle_safety \
+            --witnesses \
+              unlocked_reached \
+              running_sync_reached \
+              retry_backoff_reached \
+              mobile_background_locked_reached \
+              desktop_background_unlocked_reached \
+              revocation_reached \
+              controlled_fault_reached \
+              stopped_reached \
+            2>&1 | tee .formal-artifacts/simulation/quint-run.log
+
+      - name: Generate model-based test traces
+        working-directory: cliptown-flutter
+        shell: bash
+        run: |
+          mkdir -p .formal-artifacts/mbt
+          set -o pipefail
+          npx --yes --package="$QUINT_PACKAGE" quint run \
+            formal/app_lifecycle.qnt \
+            --main=app_lifecycle \
+            --max-samples=1000 \
+            --max-steps=30 \
+            --seed="$QUINT_SEED" \
+            --n-traces=12 \
+            --mbt \
+            --out-itf='.formal-artifacts/mbt/app-lifecycle-{seq}.itf.json' \
+            2>&1 | tee .formal-artifacts/mbt/quint-run.log
+
+      - name: Replay formal traces through production Dart reducer
+        working-directory: cliptown-flutter
+        env:
+          CLIPTOWN_FORMAL_TRACE_DIR: .formal-artifacts/mbt
+        run: flutter test test/formal_trace_replay_test.dart --reporter=expanded
+
+      - name: Exhaust every reachable Dart control state and event
+        working-directory: cliptown-flutter
+        run: flutter test test/app_state_machine_test.dart --reporter=expanded
+
+      - name: Install Java for bounded verification
+        if: github.event_name != 'pull_request'
+        uses: actions/setup-java@c1e323688fd81a25caa38c78aa6df2d33d3e20d9 # v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Bounded model check with Apalache
+        if: github.event_name != 'pull_request'
+        working-directory: cliptown-flutter
+        shell: bash
+        run: |
+          mkdir -p .formal-artifacts/verify
+          set -o pipefail
+          npx --yes --package="$QUINT_PACKAGE" quint verify \
+            formal/app_lifecycle.qnt \
+            --main=app_lifecycle \
+            --max-steps=14 \
+            --verbosity=0 \
+            --invariant=app_lifecycle_safety \
+            --out-itf='.formal-artifacts/verify/counterexample-{seq}.itf.json' \
+            2>&1 | tee .formal-artifacts/verify/quint-verify.log
+
+      - name: Record formal evidence provenance
+        if: always()
+        working-directory: cliptown-flutter
+        shell: bash
+        run: |
+          mkdir -p .formal-artifacts
+          {
+            printf 'commit=%s\n' "$GITHUB_SHA"
+            printf 'event=%s\n' "$GITHUB_EVENT_NAME"
+            printf 'runner_os=%s\n' "$RUNNER_OS"
+            printf 'node=' && node --version
+            printf 'dart=' && dart --version 2>&1
+            printf 'java=' && (java -version 2>&1 | head -n 1 || true)
+            printf 'quint_package=%s\n' "$QUINT_PACKAGE"
+            printf 'quint_seed=%s\n' "$QUINT_SEED"
+            printf 'verification_claim=bounded-max-steps-14\n'
+            sha256sum \
+              formal/fm.toml \
+              formal/app_lifecycle.qnt \
+              formal/app_lifecycle_test.qnt \
+              lib/state/app_state_machine.dart \
+              tool/replay_formal_traces.dart \
+              test/app_state_machine_test.dart \
+              test/formal_trace_replay_test.dart
+          } > .formal-artifacts/provenance.txt
+
+      - name: Upload formal traces and provenance
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: cliptown-app-lifecycle-formal-artifacts
+          path: cliptown-flutter/.formal-artifacts
+          include-hidden-files: true
+          if-no-files-found: warn
+          retention-days: 14

@@ -7,6 +7,7 @@ import 'package:tray_manager/tray_manager.dart';
 import 'package:window_manager/window_manager.dart';
 
 import 'desktop_lifecycle_controller.dart';
+import '../state/app_state_machine.dart';
 
 const String openClipTownMenuKey = 'open_cliptown';
 const String hideClipTownMenuKey = 'hide_cliptown';
@@ -20,10 +21,11 @@ DesktopTrayAction? desktopTrayActionForMenuKey(String? key) => switch (key) {
 };
 
 class DesktopLifecycleHost with WindowListener, TrayListener {
-  DesktopLifecycleHost()
+  DesktopLifecycleHost({AppStateMachine? stateMachine})
     : controller = DesktopLifecycleController(
         window: const WindowManagerPort(),
         tray: const TrayManagerPort(),
+        stateMachine: stateMachine,
       );
 
   final DesktopLifecycleController controller;

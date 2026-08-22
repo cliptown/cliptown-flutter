@@ -1,28 +1,56 @@
 import 'package:flutter/material.dart';
 
 import 'src/clip_store.dart';
+import 'state/app_state_machine.dart';
 
 class ClipTownApp extends StatefulWidget {
   const ClipTownApp({
     super.key,
     this.store,
+    this.stateMachine,
+    this.runtimeKind = AppRuntimeKind.mobile,
+    this.disposeStateMachine = false,
     this.desktopBackgroundEnabled = false,
   });
 
   final ClipStore? store;
+  final AppStateMachine? stateMachine;
+  final AppRuntimeKind runtimeKind;
+  final bool disposeStateMachine;
   final bool desktopBackgroundEnabled;
 
   @override
   State<ClipTownApp> createState() => _ClipTownAppState();
 }
 
-class _ClipTownAppState extends State<ClipTownApp> {
+class _ClipTownAppState extends State<ClipTownApp> with WidgetsBindingObserver {
   late final ClipStore store = widget.store ?? ClipStore();
   late final bool ownsStore = widget.store == null;
+  late final AppStateMachine stateMachine =
+      widget.stateMachine ?? AppStateMachine.signedOut(widget.runtimeKind);
+  late final bool ownsStateMachine =
+      widget.stateMachine == null || widget.disposeStateMachine;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState lifecycleState) {
+    final event = appEventForFlutterLifecycle(
+      runtime: stateMachine.state.runtime,
+      lifecycleState: lifecycleState,
+    );
+    if (event != null) stateMachine.dispatch(event);
+  }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     if (ownsStore) store.dispose();
+    if (ownsStateMachine) stateMachine.dispose();
     super.dispose();
   }
 
@@ -41,20 +69,45 @@ class _ClipTownAppState extends State<ClipTownApp> {
       ),
       home: ClipTownHome(
         store: store,
+        stateMachine: stateMachine,
         desktopBackgroundEnabled: widget.desktopBackgroundEnabled,
       ),
     );
   }
 }
 
+/// Translates Flutter's platform lifecycle into the app's finite event alphabet.
+///
+/// Desktop window/tray transitions are owned by [DesktopLifecycleController],
+/// so Flutter lifecycle notifications are intentionally ignored there. Mobile
+/// inactive, hidden, and paused states all fail closed through the same formal
+/// background transition. A detached engine starts the controlled shutdown
+/// path.
+AppEvent? appEventForFlutterLifecycle({
+  required AppRuntimeKind runtime,
+  required AppLifecycleState lifecycleState,
+}) {
+  if (runtime == AppRuntimeKind.desktop) return null;
+
+  return switch (lifecycleState) {
+    AppLifecycleState.resumed => AppEvent.foregroundRequested,
+    AppLifecycleState.inactive ||
+    AppLifecycleState.hidden ||
+    AppLifecycleState.paused => AppEvent.backgroundRequested,
+    AppLifecycleState.detached => AppEvent.shutdownRequested,
+  };
+}
+
 class ClipTownHome extends StatelessWidget {
   const ClipTownHome({
     super.key,
     required this.store,
+    required this.stateMachine,
     this.desktopBackgroundEnabled = false,
   });
 
   final ClipStore store;
+  final AppStateMachine stateMachine;
   final bool desktopBackgroundEnabled;
 
   @override
@@ -63,14 +116,28 @@ class ClipTownHome extends StatelessWidget {
       appBar: AppBar(
         title: const Text('ClipTown'),
         actions: <Widget>[
-          Padding(
-            padding: const EdgeInsets.only(right: 16),
-            child: Center(
-              child: Text(
-                desktopBackgroundEnabled
-                    ? 'Tray active • close keeps ClipTown running'
-                    : 'Local preview • sync disconnected',
-                key: const Key('desktop-background-status'),
+          ListenableBuilder(
+            listenable: stateMachine,
+            builder: (context, _) => Padding(
+              padding: const EdgeInsets.only(right: 16),
+              child: Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: <Widget>[
+                    Text(
+                      desktopBackgroundEnabled
+                          ? 'Tray active • close keeps ClipTown running'
+                          : 'Local preview • sync disconnected',
+                      key: const Key('desktop-background-status'),
+                    ),
+                    Text(
+                      stateMachine.statusLabel,
+                      key: const Key('formal-state-status'),
+                      style: Theme.of(context).textTheme.labelSmall,
+                    ),
+                  ],
+                ),
               ),
             ),
           ),

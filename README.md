@@ -8,6 +8,23 @@ The application provides a testable local ClipTown shell with search, pinning, c
 
 The sibling `cliptown-interfaces` checkout is required at `../cliptown-interfaces` for the generated Dart wire package.
 
+## Formally checked app state
+
+`lib/state/app_state_machine.dart` is the single transition authority for the
+shared mobile and desktop control plane. It models app lifecycle,
+authentication, local-device trust, vault availability, network availability,
+window visibility, and sync. Every event is handled by one pure total reducer:
+valid transitions advance a monotonic revision; invalid and reentrant events
+are rejected without changing state; native failures enter a controlled,
+locked, sync-disabled fault state.
+
+The product-owned Quint specification in `formal/app_lifecycle.qnt` checks the
+same safety gates. CI typechecks deterministic scenarios, explores critical
+states, performs bounded Apalache model checking, generates ITF traces, and
+replays every trace through the production Dart reducer. Dart tests separately
+exhaust every reachable finite control state against every event. See
+`formal/README.md` for the precise bounds, assumptions, and claim limitations.
+
 ## Security foundation
 
 - `lib/security/security_models.dart` defines revisioned pending/active/suspended/revoked devices, backup email/phone summaries, recovery challenges, and local biometric/passkey/PIN policy.
@@ -21,10 +38,13 @@ The six-digit PIN is a local unlock factor for a random device-wrapping key; it 
 
 ```sh
 flutter pub get
-dart format lib test integration_test
+dart format lib test integration_test tool
 flutter analyze --fatal-infos --fatal-warnings
 flutter test --coverage
 flutter test integration_test/desktop_lifecycle_test.dart -d macos
+npx --yes --package='@informalsystems/quint@0.32.0' \
+  quint test formal/app_lifecycle_test.qnt \
+  --main=app_lifecycle_test --match='.*Test$'
 ```
 
 GitHub Actions additionally builds Linux, macOS, Windows, Android, and iOS simulator targets and executes the same search-and-pin integration flow on Android and iOS emulators. Mobile tests target the explicit `integration_test/app_test.dart` entrypoint so directory discovery cannot silently skip or misroute the device test.
