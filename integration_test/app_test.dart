@@ -1,4 +1,5 @@
 import 'package:cliptown_app/cliptown_app.dart';
+import 'package:cliptown_app/history/clip_repository.dart';
 import 'package:cliptown_app/src/clip_store.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -7,43 +8,41 @@ import 'package:integration_test/integration_test.dart';
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets('search and pin flow works on a real device surface', (
+  testWidgets('create, search, and pin flow works on an installed app', (
     tester,
   ) async {
-    final store = ClipStore();
+    final store = ClipStore(repository: MemoryClipRepository());
+    await store.initialize();
     await tester.pumpWidget(ClipTownApp(store: store));
     await tester.pumpAndSettle();
 
-    await tester.enterText(find.byKey(const Key('clip-search')), 'skyline');
-    await tester.pumpAndSettle();
-    expect(find.text('Skyline logo'), findsOneWidget);
-    expect(find.text('Deploy command'), findsNothing);
+    expect(find.byKey(const Key('empty-history')), findsOneWidget);
 
-    final pin = find.byKey(const Key('pin-design-reference'));
-    await tester.ensureVisible(pin);
-    await tester.tap(pin);
+    await tester.tap(find.byKey(const Key('add-manual-clip')));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const Key('manual-clip-text')),
+      'ClipTown cross-platform acceptance marker',
+    );
+    await tester.tap(find.byKey(const Key('save-manual-clip')));
+    await tester.pumpAndSettle();
+
+    expect(store.clips, hasLength(1));
+    expect(
+      find.text('ClipTown cross-platform acceptance marker'),
+      findsWidgets,
+    );
+
+    await tester.enterText(find.byKey(const Key('clip-search')), 'acceptance');
     await tester.pumpAndSettle();
     expect(
-      store.visibleClips
-          .singleWhere((clip) => clip.id == 'design-reference')
-          .pinned,
-      isTrue,
+      find.text('ClipTown cross-platform acceptance marker'),
+      findsWidgets,
     );
 
-    await tester.enterText(find.byKey(const Key('clip-search')), '');
+    final clipId = store.clips.single.id;
+    await tester.tap(find.byKey(Key('pin-$clipId')));
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const Key('pinned-only')));
-    await tester.pumpAndSettle();
-
-    final chip = tester.widget<FilterChip>(
-      find.byKey(const Key('pinned-only')),
-    );
-    expect(chip.selected, isTrue);
-    expect(
-      store.visibleClips.map((clip) => clip.id),
-      orderedEquals(<String>['deploy-command', 'design-reference']),
-    );
-    expect(find.text('Deploy command'), findsOneWidget);
-    expect(find.text('Security notes'), findsNothing);
+    expect(store.clips.single.pinned, isTrue);
   });
 }

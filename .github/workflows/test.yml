@@ -5,6 +5,7 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -32,7 +33,7 @@ jobs:
           path: cliptown-interfaces
       - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
         with:
-          channel: stable
+          flutter-version: '3.44.2'
           cache: true
       - name: Resolve dependencies
         working-directory: cliptown-flutter
@@ -78,11 +79,15 @@ jobs:
         include:
           - os: ubuntu-latest
             target: linux
+            artifact_path: build/linux/x64/debug/bundle
           - os: macos-latest
             target: macos
+            artifact_path: build/macos/Build/Products/Debug/cliptown_app.app
           - os: windows-latest
             target: windows
+            artifact_path: build/windows/x64/runner/Debug
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -100,11 +105,12 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y \
             ninja-build \
+            xvfb \
             libgtk-3-dev \
             libayatana-appindicator3-dev
       - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
         with:
-          channel: stable
+          flutter-version: '3.44.2'
           cache: true
       - name: Build ${{ matrix.target }} debug application
         shell: bash
@@ -113,6 +119,61 @@ jobs:
           flutter config --enable-${{ matrix.target }}-desktop
           flutter pub get
           flutter build ${{ matrix.target }} --debug
+      - name: Run installed ${{ matrix.target }} desktop journeys
+        id: desktop_test
+        continue-on-error: true
+        shell: bash
+        working-directory: cliptown-flutter
+        run: |
+          set -euo pipefail
+          run_desktop_test() {
+            local test_file="$1"
+            if [[ "${{ runner.os }}" == "Linux" ]]; then
+              xvfb-run -a flutter test "$test_file" \
+                -d "${{ matrix.target }}" --reporter=expanded
+            else
+              flutter test "$test_file" \
+                -d "${{ matrix.target }}" --reporter=expanded
+            fi
+          }
+
+          {
+            run_desktop_test integration_test/app_test.dart
+            run_desktop_test integration_test/desktop_clipboard_e2e_test.dart
+            run_desktop_test integration_test/desktop_lifecycle_test.dart
+          } 2>&1 | tee desktop-integration.txt
+      - name: Capture desktop crash diagnostics
+        if: always()
+        shell: bash
+        working-directory: cliptown-flutter
+        run: |
+          if [[ "${{ runner.os }}" == "macOS" ]]; then
+            log show --style compact --last 30m \
+              --predicate 'process == "cliptown_app"' \
+              > desktop-system.log 2>&1 || true
+          elif [[ "${{ runner.os }}" == "Linux" ]]; then
+            coredumpctl --no-pager --since '-30 min' \
+              > desktop-system.log 2>&1 || true
+          else
+            powershell.exe -NoProfile -Command \
+              "Get-WinEvent -FilterHashtable @{LogName='Application'; StartTime=(Get-Date).AddMinutes(-30)} | Where-Object { \$_.Message -match 'cliptown_app' } | Format-List -Property '*'" \
+              > desktop-system.log 2>&1 || true
+          fi
+      - name: Upload ${{ matrix.target }} debug application and diagnostics
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: flutter-${{ matrix.target }}-debug-and-e2e
+          path: |
+            cliptown-flutter/${{ matrix.artifact_path }}
+            cliptown-flutter/desktop-integration.txt
+            cliptown-flutter/desktop-system.log
+          if-no-files-found: warn
+      - name: Enforce ${{ matrix.target }} desktop journeys
+        if: steps.desktop_test.outcome == 'failure'
+        shell: bash
+        working-directory: cliptown-flutter
+        run: cat desktop-integration.txt 2>/dev/null || true; exit 1
 
   android-emulator:
     runs-on: ubuntu-latest
@@ -149,7 +210,7 @@ jobs:
           fi
       - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
         with:
-          channel: stable
+          flutter-version: '3.44.2'
           cache: true
       - name: Resolve dependencies and build Android application
         working-directory: cliptown-flutter
@@ -284,7 +345,7 @@ jobs:
           path: cliptown-interfaces
       - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
         with:
-          channel: stable
+          flutter-version: '3.44.2'
           cache: true
       - name: Build iOS simulator application
         working-directory: cliptown-flutter

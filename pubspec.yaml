@@ -9,10 +9,21 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  clipboard_watcher: ^0.3.0
+  cryptography: ^2.9.0
+  cryptography_flutter: ^2.3.4
   cupertino_icons: ^1.0.8
   cliptown_interfaces:
     path: ../cliptown-interfaces/generated/dart
+  # 11.x currently requires win32 6.x while super_clipboard 0.9.x requires
+  # win32 <6. Keep the security-hardened 10.x line until that upstream graph
+  # converges; do not force an unsafe transitive override.
+  flutter_secure_storage: ^10.3.1
+  hotkey_manager: ^0.2.3
+  path_provider: ^2.1.6
   screen_retriever: ^0.2.2
+  sqlite3: ^3.5.0
+  super_clipboard: ^0.9.1
   supabase_flutter: ^2.16.0
   tray_manager: ^0.5.3
   window_manager: ^0.5.2
@@ -23,6 +34,11 @@ dev_dependencies:
   integration_test:
     sdk: flutter
   flutter_lints: ^6.0.0
+
+hooks:
+  user_defines:
+    sqlite3:
+      source: sqlite3mc
 
 flutter:
   uses-material-design: true
