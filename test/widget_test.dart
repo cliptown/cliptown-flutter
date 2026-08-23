@@ -96,6 +96,29 @@ void main() {
     expect(find.text('Capture off'), findsOneWidget);
     expect(find.text('Clipboard capture paused'), findsOneWidget);
   });
+
+  testWidgets('compact mobile viewport scrolls without layout overflow', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(402, 520);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final store = await createDemoStore();
+
+    await tester.pumpWidget(ClipTownApp(store: store));
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+    expect(find.byKey(const Key('clip-history-scroll')), findsOneWidget);
+    await tester.drag(
+      find.byKey(const Key('clip-history-scroll')),
+      const Offset(0, -500),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Deploy command'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
 }
 
 Future<void> _setDesktopSurface(WidgetTester tester) async {

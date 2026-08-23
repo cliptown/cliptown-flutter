@@ -28,6 +28,10 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(store.clips, hasLength(1));
+    await tester.ensureVisible(
+      find.text('ClipTown cross-platform acceptance marker').first,
+    );
+    await tester.pumpAndSettle();
     expect(
       find.text('ClipTown cross-platform acceptance marker'),
       findsWidgets,
@@ -41,7 +45,10 @@ void main() {
     );
 
     final clipId = store.clips.single.id;
-    await tester.tap(find.byKey(Key('pin-$clipId')));
+    final pinButton = find.byKey(Key('pin-$clipId'));
+    await tester.ensureVisible(pinButton);
+    await tester.pumpAndSettle();
+    await tester.tap(pinButton);
     await tester.pumpAndSettle();
     expect(store.clips.single.pinned, isTrue);
   });

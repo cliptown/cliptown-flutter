@@ -114,19 +114,20 @@ class _ClipTownHomeState extends State<ClipTownHome> {
             onPressed: _showPrivacySettings,
             icon: const Icon(Icons.shield_outlined),
           ),
-          Padding(
-            padding: const EdgeInsets.only(right: 16),
-            child: Center(
-              child: ListenableBuilder(
-                listenable: store,
-                builder: (context, _) => Text(
-                  _desktopStatus,
-                  key: const Key('desktop-background-status'),
-                  style: Theme.of(context).textTheme.labelMedium,
+          if (MediaQuery.sizeOf(context).width >= 600)
+            Padding(
+              padding: const EdgeInsets.only(right: 16),
+              child: Center(
+                child: ListenableBuilder(
+                  listenable: store,
+                  builder: (context, _) => Text(
+                    _desktopStatus,
+                    key: const Key('desktop-background-status'),
+                    style: Theme.of(context).textTheme.labelMedium,
+                  ),
                 ),
               ),
             ),
-          ),
         ],
       ),
       floatingActionButton: FloatingActionButton.extended(
@@ -157,7 +158,7 @@ class _ClipTownHomeState extends State<ClipTownHome> {
 
   Widget _buildBody(BuildContext context) {
     final clips = store.visibleClips;
-    return Column(
+    final header = Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
         Text(
@@ -192,26 +193,37 @@ class _ClipTownHomeState extends State<ClipTownHome> {
           _buildQueueBar(),
         ],
         const SizedBox(height: 12),
-        Expanded(
-          child: clips.isEmpty
-              ? _EmptyHistory(hasQuery: store.query.trim().isNotEmpty)
-              : ListView.separated(
-                  key: const Key('clip-history-list'),
-                  itemCount: clips.length,
-                  separatorBuilder: (_, _) => const SizedBox(height: 8),
-                  itemBuilder: (context, index) => _ClipCard(
-                    clip: clips[index],
-                    queued: store.queuedIds.contains(clips[index].id),
-                    onCopy: () =>
-                        _run(() => clipboardController.copy(clips[index])),
-                    onToggleQueued: () => store.toggleQueued(clips[index].id),
-                    onTogglePinned: () =>
-                        _run(() => store.togglePinned(clips[index].id)),
-                    onAction: (action) =>
-                        _handleClipAction(clips[index], action),
-                  ),
-                ),
-        ),
+      ],
+    );
+
+    return CustomScrollView(
+      key: const Key('clip-history-scroll'),
+      slivers: <Widget>[
+        SliverToBoxAdapter(child: header),
+        if (clips.isEmpty)
+          SliverFillRemaining(
+            hasScrollBody: false,
+            child: _EmptyHistory(hasQuery: store.query.trim().isNotEmpty),
+          )
+        else
+          SliverPadding(
+            padding: const EdgeInsets.only(bottom: 88),
+            sliver: SliverList(
+              key: const Key('clip-history-list'),
+              delegate: SliverChildBuilderDelegate((context, index) {
+                if (index.isOdd) return const SizedBox(height: 8);
+                final clip = clips[index ~/ 2];
+                return _ClipCard(
+                  clip: clip,
+                  queued: store.queuedIds.contains(clip.id),
+                  onCopy: () => _run(() => clipboardController.copy(clip)),
+                  onToggleQueued: () => store.toggleQueued(clip.id),
+                  onTogglePinned: () => _run(() => store.togglePinned(clip.id)),
+                  onAction: (action) => _handleClipAction(clip, action),
+                );
+              }, childCount: clips.length * 2 - 1),
+            ),
+          ),
       ],
     );
   }
@@ -642,114 +654,140 @@ class _ClipCard extends StatelessWidget {
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(12),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            _ClipPreview(clip: clip),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                key: Key('clip-${clip.id}'),
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  Text(
-                    clip.title,
-                    style: Theme.of(context).textTheme.titleMedium,
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    clip.summary,
-                    maxLines: 3,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  const SizedBox(height: 8),
-                  Wrap(
-                    spacing: 6,
-                    runSpacing: 4,
-                    children: <Widget>[
-                      _MetaChip(label: clip.kind.label),
-                      if (clip.collection case final collection?)
-                        _MetaChip(label: collection),
-                      if (clip.sourceApplication case final source?)
-                        _MetaChip(label: source),
-                      ...clip.tags.map((tag) => _MetaChip(label: '#$tag')),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-            IconButton(
-              key: Key('copy-${clip.id}'),
-              tooltip: 'Copy ${clip.title}',
-              onPressed: onCopy,
-              icon: const Icon(Icons.copy),
-            ),
-            IconButton(
-              key: Key('queue-${clip.id}'),
-              tooltip: queued
-                  ? 'Remove from paste queue'
-                  : 'Add to paste queue',
-              onPressed: onToggleQueued,
-              icon: Icon(queued ? Icons.playlist_remove : Icons.playlist_add),
-            ),
-            IconButton(
-              key: Key('pin-${clip.id}'),
-              tooltip: clip.pinned
-                  ? 'Unpin ${clip.title}'
-                  : 'Pin ${clip.title}',
-              onPressed: onTogglePinned,
-              icon: Icon(
-                clip.pinned ? Icons.push_pin : Icons.push_pin_outlined,
-              ),
-            ),
-            PopupMenuButton<_ClipAction>(
-              key: Key('actions-${clip.id}'),
-              tooltip: 'More actions',
-              onSelected: onAction,
-              itemBuilder: (context) => <PopupMenuEntry<_ClipAction>>[
-                const PopupMenuItem(
-                  value: _ClipAction.rename,
-                  child: Text('Rename'),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final details = Column(
+              key: Key('clip-${clip.id}'),
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(
+                  clip.title,
+                  style: Theme.of(context).textTheme.titleMedium,
                 ),
-                const PopupMenuItem(
-                  value: _ClipAction.collection,
-                  child: Text('Move to collection'),
+                const SizedBox(height: 4),
+                Text(
+                  clip.summary,
+                  maxLines: 3,
+                  overflow: TextOverflow.ellipsis,
                 ),
-                if (clip.text != null) ...<PopupMenuEntry<_ClipAction>>[
-                  const PopupMenuDivider(),
-                  const PopupMenuItem(
-                    value: _ClipAction.plainText,
-                    child: Text('Copy as plain text'),
-                  ),
-                  const PopupMenuItem(
-                    value: _ClipAction.trim,
-                    child: Text('Trim and copy'),
-                  ),
-                  const PopupMenuItem(
-                    value: _ClipAction.prettyJson,
-                    child: Text('Pretty-print JSON and copy'),
-                  ),
-                  const PopupMenuItem(
-                    value: _ClipAction.uppercase,
-                    child: Text('Uppercase and copy'),
-                  ),
-                  const PopupMenuItem(
-                    value: _ClipAction.lowercase,
-                    child: Text('Lowercase and copy'),
-                  ),
-                  const PopupMenuItem(
-                    value: _ClipAction.sortUniqueLines,
-                    child: Text('Sort unique lines and copy'),
-                  ),
-                ],
-                const PopupMenuDivider(),
-                const PopupMenuItem(
-                  value: _ClipAction.delete,
-                  child: Text('Delete'),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 4,
+                  children: <Widget>[
+                    _MetaChip(label: clip.kind.label),
+                    if (clip.collection case final collection?)
+                      _MetaChip(label: collection),
+                    if (clip.sourceApplication case final source?)
+                      _MetaChip(label: source),
+                    ...clip.tags.map((tag) => _MetaChip(label: '#$tag')),
+                  ],
                 ),
               ],
-            ),
-          ],
+            );
+            final actions = <Widget>[
+              IconButton(
+                key: Key('copy-${clip.id}'),
+                tooltip: 'Copy ${clip.title}',
+                onPressed: onCopy,
+                icon: const Icon(Icons.copy),
+              ),
+              IconButton(
+                key: Key('queue-${clip.id}'),
+                tooltip: queued
+                    ? 'Remove from paste queue'
+                    : 'Add to paste queue',
+                onPressed: onToggleQueued,
+                icon: Icon(queued ? Icons.playlist_remove : Icons.playlist_add),
+              ),
+              IconButton(
+                key: Key('pin-${clip.id}'),
+                tooltip: clip.pinned
+                    ? 'Unpin ${clip.title}'
+                    : 'Pin ${clip.title}',
+                onPressed: onTogglePinned,
+                icon: Icon(
+                  clip.pinned ? Icons.push_pin : Icons.push_pin_outlined,
+                ),
+              ),
+              PopupMenuButton<_ClipAction>(
+                key: Key('actions-${clip.id}'),
+                tooltip: 'More actions',
+                onSelected: onAction,
+                itemBuilder: (context) => <PopupMenuEntry<_ClipAction>>[
+                  const PopupMenuItem(
+                    value: _ClipAction.rename,
+                    child: Text('Rename'),
+                  ),
+                  const PopupMenuItem(
+                    value: _ClipAction.collection,
+                    child: Text('Move to collection'),
+                  ),
+                  if (clip.text != null) ...<PopupMenuEntry<_ClipAction>>[
+                    const PopupMenuDivider(),
+                    const PopupMenuItem(
+                      value: _ClipAction.plainText,
+                      child: Text('Copy as plain text'),
+                    ),
+                    const PopupMenuItem(
+                      value: _ClipAction.trim,
+                      child: Text('Trim and copy'),
+                    ),
+                    const PopupMenuItem(
+                      value: _ClipAction.prettyJson,
+                      child: Text('Pretty-print JSON and copy'),
+                    ),
+                    const PopupMenuItem(
+                      value: _ClipAction.uppercase,
+                      child: Text('Uppercase and copy'),
+                    ),
+                    const PopupMenuItem(
+                      value: _ClipAction.lowercase,
+                      child: Text('Lowercase and copy'),
+                    ),
+                    const PopupMenuItem(
+                      value: _ClipAction.sortUniqueLines,
+                      child: Text('Sort unique lines and copy'),
+                    ),
+                  ],
+                  const PopupMenuDivider(),
+                  const PopupMenuItem(
+                    value: _ClipAction.delete,
+                    child: Text('Delete'),
+                  ),
+                ],
+              ),
+            ];
+            if (constraints.maxWidth < 560) {
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: <Widget>[
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      _ClipPreview(clip: clip),
+                      const SizedBox(width: 12),
+                      Expanded(child: details),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: Wrap(spacing: 2, children: actions),
+                  ),
+                ],
+              );
+            }
+            return Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                _ClipPreview(clip: clip),
+                const SizedBox(width: 12),
+                Expanded(child: details),
+                ...actions,
+              ],
+            );
+          },
         ),
       ),
     );
