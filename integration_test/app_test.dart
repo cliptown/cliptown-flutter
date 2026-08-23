@@ -37,14 +37,26 @@ void main() {
       findsWidgets,
     );
 
+    final clipId = store.clips.single.id;
     await tester.enterText(find.byKey(const Key('clip-search')), 'acceptance');
+    tester.testTextInput.hide();
     await tester.pumpAndSettle();
+    expect(store.visibleClips.map((clip) => clip.id), <String>[clipId]);
+    expect(find.byKey(const Key('clip-history-list')), findsOneWidget);
+
+    final card = find.byKey(Key('clip-$clipId'));
+    await tester.scrollUntilVisible(
+      card,
+      200,
+      scrollable: find.byKey(const Key('clip-history-scroll')),
+    );
+    await tester.pumpAndSettle();
+    expect(card, findsOneWidget);
     expect(
       find.text('ClipTown cross-platform acceptance marker'),
       findsWidgets,
     );
 
-    final clipId = store.clips.single.id;
     final pinButton = find.byKey(Key('pin-$clipId'));
     await tester.ensureVisible(pinButton);
     await tester.pumpAndSettle();
