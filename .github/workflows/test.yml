@@ -114,6 +114,13 @@ jobs:
         with:
           flutter-version: '3.44.2'
           cache: true
+      - name: Select unrestricted entitlements for ad-hoc macOS CI signing
+        if: runner.os == 'macOS'
+        working-directory: cliptown-flutter
+        run: |
+          cp macos/Runner/UnsignedDebug.entitlements \
+            macos/Runner/DebugProfile.entitlements
+          plutil -lint macos/Runner/DebugProfile.entitlements
       - name: Build ${{ matrix.target }} debug application
         shell: bash
         working-directory: cliptown-flutter
