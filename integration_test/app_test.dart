@@ -39,7 +39,7 @@ void main() {
 
     final clipId = store.clips.single.id;
     await tester.enterText(find.byKey(const Key('clip-search')), 'acceptance');
-    tester.testTextInput.hide();
+    FocusManager.instance.primaryFocus?.unfocus();
     await tester.pumpAndSettle();
     expect(store.visibleClips.map((clip) => clip.id), <String>[clipId]);
     expect(find.byKey(const Key('clip-history-list')), findsOneWidget);
