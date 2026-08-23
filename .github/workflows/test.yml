@@ -80,7 +80,7 @@ jobs:
           - os: ubuntu-latest
             target: linux
             artifact_path: build/linux/x64/debug/bundle
-          - os: macos-latest
+          - os: macos-15
             target: macos
             artifact_path: build/macos/Build/Products/Debug/cliptown_app.app
           - os: windows-latest
@@ -153,6 +153,10 @@ jobs:
             log show --style compact --last 30m \
               --predicate 'process == "cliptown_app"' \
               > desktop-system.log 2>&1 || true
+            mkdir -p desktop-crash-reports
+            find "$HOME/Library/Logs/DiagnosticReports" -maxdepth 1 -type f \
+              -mmin -30 -name '*cliptown_app*' \
+              -exec cp {} desktop-crash-reports/ \; 2>/dev/null || true
           elif [[ "${{ runner.os }}" == "Linux" ]]; then
             coredumpctl --no-pager --since '-30 min' \
               > desktop-system.log 2>&1 || true
@@ -170,6 +174,7 @@ jobs:
             cliptown-flutter/${{ matrix.artifact_path }}
             cliptown-flutter/desktop-integration.txt
             cliptown-flutter/desktop-system.log
+            cliptown-flutter/desktop-crash-reports
           if-no-files-found: warn
       - name: Enforce ${{ matrix.target }} desktop journeys
         if: steps.desktop_test.outcome == 'failure'
@@ -332,7 +337,7 @@ jobs:
           exit 1
 
   ios-simulator:
-    runs-on: macos-latest
+    runs-on: macos-15
     timeout-minutes: 35
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
