@@ -44,8 +44,8 @@ jobs:
       - name: Verify formatting
         working-directory: cliptown-flutter
         run: |
-          dart format lib test integration_test
-          git diff --exit-code -- lib test integration_test
+          dart format lib test integration_test tool
+          git diff --exit-code -- lib test integration_test tool
       - name: Analyze with warnings as errors
         id: analyze
         continue-on-error: true
