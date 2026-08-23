@@ -45,11 +45,12 @@ void main() {
     expect(find.byKey(const Key('clip-history-list')), findsOneWidget);
 
     final card = find.byKey(Key('clip-$clipId'));
-    await tester.scrollUntilVisible(
-      card,
-      200,
-      scrollable: find.byKey(const Key('clip-history-scroll')),
+    final historyScrollable = find.descendant(
+      of: find.byKey(const Key('clip-history-scroll')),
+      matching: find.byType(Scrollable),
     );
+    expect(historyScrollable, findsOneWidget);
+    await tester.scrollUntilVisible(card, 200, scrollable: historyScrollable);
     await tester.pumpAndSettle();
     expect(card, findsOneWidget);
     expect(
