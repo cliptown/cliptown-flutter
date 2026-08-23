@@ -305,8 +305,8 @@ jobs:
         if: always()
         shell: bash
         run: |
-          "$ANDROID_HOME/platform-tools/adb" -s emulator-5554 logcat -d > cliptown-flutter/adb-logcat.txt 2>&1 || true
-          "$ANDROID_HOME/platform-tools/adb" -s emulator-5554 shell getprop > cliptown-flutter/android-properties.txt 2>&1 || true
+          timeout 30s "$ANDROID_HOME/platform-tools/adb" -s emulator-5554 logcat -d > cliptown-flutter/adb-logcat.txt 2>&1 || true
+          timeout 30s "$ANDROID_HOME/platform-tools/adb" -s emulator-5554 shell getprop > cliptown-flutter/android-properties.txt 2>&1 || true
           pgrep -af emulator > cliptown-flutter/android-emulator-process.txt 2>&1 || true
           find "$ANDROID_AVD_HOME" -maxdepth 2 -type f -print > cliptown-flutter/android-avd-files.txt 2>&1 || true
       - name: Upload Android emulator diagnostics
