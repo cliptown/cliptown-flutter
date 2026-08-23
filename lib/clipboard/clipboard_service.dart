@@ -26,12 +26,20 @@ abstract interface class ClipClipboardService {
 class SystemClipClipboardService
     with ClipboardListener
     implements ClipClipboardService {
-  SystemClipClipboardService({this.maxBinaryBytes = 8 * 1024 * 1024});
+  SystemClipClipboardService({
+    this.maxBinaryBytes = 8 * 1024 * 1024,
+    this.reconciliationInterval = const Duration(milliseconds: 500),
+  });
 
   final int maxBinaryBytes;
+  final Duration reconciliationInterval;
   ClipboardSnapshotHandler? _onSnapshot;
   bool _monitoring = false;
+  bool _insideHandler = false;
+  bool _readInFlight = false;
   String? _suppressedFingerprint;
+  String? _lastObservedFingerprint;
+  Timer? _reconciliationTimer;
   Future<void> _callbackTail = Future<void>.value();
 
   @override
@@ -45,6 +53,18 @@ class SystemClipClipboardService
     try {
       await clipboardWatcher.start();
       _monitoring = true;
+      try {
+        _lastObservedFingerprint = (await read())?.fingerprintMaterial;
+      } on Object {
+        // The watcher remains useful when the clipboard is temporarily locked.
+      }
+      // Native change notifications remain the fast path. The reconciliation
+      // poll closes platform/plugin gaps such as clipboard_watcher 0.3.0
+      // observing X11 PRIMARY while applications write CLIPBOARD on Linux.
+      _reconciliationTimer = Timer.periodic(
+        reconciliationInterval,
+        (_) => _scheduleRead(),
+      );
     } on Object {
       clipboardWatcher.removeListener(this);
       _onSnapshot = null;
@@ -59,31 +79,50 @@ class SystemClipClipboardService
       return;
     }
     _monitoring = false;
+    _reconciliationTimer?.cancel();
+    _reconciliationTimer = null;
     clipboardWatcher.removeListener(this);
     _onSnapshot = null;
     await clipboardWatcher.stop();
-    await _callbackTail;
+    // A fail-closed handler may stop monitoring while it is itself executing.
+    // Awaiting its own tail would deadlock; external callers still wait for an
+    // in-flight read/handler to finish.
+    if (!_insideHandler) await _callbackTail;
   }
 
   @override
   void onClipboardChanged() {
-    if (!_monitoring) return;
+    _scheduleRead();
+  }
+
+  void _scheduleRead() {
+    if (!_monitoring || _readInFlight) return;
+    _readInFlight = true;
     _callbackTail = _callbackTail
         .then((_) async {
           final handler = _onSnapshot;
           if (!_monitoring || handler == null) return;
           final snapshot = await read();
-          if (snapshot == null) return;
+          if (!_monitoring || snapshot == null) return;
+          final fingerprint = snapshot.fingerprintMaterial;
+          if (_lastObservedFingerprint == fingerprint) return;
+          _lastObservedFingerprint = fingerprint;
           if (_suppressedFingerprint == snapshot.fingerprintMaterial) {
             _suppressedFingerprint = null;
             return;
           }
-          await handler(snapshot);
+          _insideHandler = true;
+          try {
+            await handler(snapshot);
+          } finally {
+            _insideHandler = false;
+          }
         })
         .catchError((Object _) {
           // Clipboard contents and platform error details are intentionally not
           // logged. The next watcher event remains eligible for processing.
-        });
+        })
+        .whenComplete(() => _readInFlight = false);
   }
 
   @override
