@@ -47,7 +47,10 @@ void main() {
     final card = find.byKey(Key('clip-$clipId'));
     final historyScrollable = find.descendant(
       of: find.byKey(const Key('clip-history-scroll')),
-      matching: find.byType(Scrollable),
+      matching: find.byWidgetPredicate(
+        (widget) =>
+            widget is Scrollable && widget.axisDirection == AxisDirection.down,
+      ),
     );
     expect(historyScrollable, findsOneWidget);
     await tester.scrollUntilVisible(card, 200, scrollable: historyScrollable);
