@@ -103,7 +103,11 @@ class SystemClipClipboardService
           final handler = _onSnapshot;
           if (!_monitoring || handler == null) return;
           final snapshot = await read();
-          if (!_monitoring || snapshot == null) return;
+          if (!_monitoring) return;
+          if (snapshot == null) {
+            _lastObservedFingerprint = null;
+            return;
+          }
           final fingerprint = snapshot.fingerprintMaterial;
           if (_lastObservedFingerprint == fingerprint) return;
           _lastObservedFingerprint = fingerprint;
