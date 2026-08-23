@@ -114,13 +114,6 @@ jobs:
         with:
           flutter-version: '3.44.2'
           cache: true
-      - name: Select unrestricted entitlements for ad-hoc macOS CI signing
-        if: runner.os == 'macOS'
-        working-directory: cliptown-flutter
-        run: |
-          cp macos/Runner/UnsignedDebug.entitlements \
-            macos/Runner/DebugProfile.entitlements
-          plutil -lint macos/Runner/DebugProfile.entitlements
       - name: Build ${{ matrix.target }} debug application
         shell: bash
         working-directory: cliptown-flutter
@@ -150,6 +143,7 @@ jobs:
             run_desktop_test integration_test/app_test.dart
             run_desktop_test integration_test/desktop_clipboard_e2e_test.dart
             run_desktop_test integration_test/desktop_lifecycle_test.dart
+            run_desktop_test integration_test/macos_secure_vault_e2e_test.dart
           } 2>&1 | tee desktop-integration.txt
       - name: Capture desktop crash diagnostics
         if: always()

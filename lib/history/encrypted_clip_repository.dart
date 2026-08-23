@@ -1,8 +1,8 @@
 import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:cryptography/cryptography.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:path_provider/path_provider.dart';
 
@@ -201,7 +201,11 @@ class FlutterSecureVaultSecretStore implements VaultSecretStore {
           storage ??
           const FlutterSecureStorage(
             aOptions: AndroidOptions(resetOnError: false),
-            mOptions: MacOsOptions(usesDataProtectionKeychain: true),
+            // Ad-hoc debug signatures cannot claim the restricted macOS
+            // keychain access-group entitlement. Debug/profile builds still
+            // use the encrypted login Keychain; signed releases opt into the
+            // data-protection Keychain with provisioned entitlements.
+            mOptions: MacOsOptions(usesDataProtectionKeychain: kReleaseMode),
           );
 
   final FlutterSecureStorage _storage;

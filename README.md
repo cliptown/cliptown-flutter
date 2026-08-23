@@ -8,15 +8,16 @@ The application provides a testable local ClipTown shell with hybrid lexical/vec
 
 Local clipboard records and 384-dimensional text vectors are stored in an SQLite3MultipleCiphers database. A random 256-bit database key is kept in platform secure storage; an existing database with a missing or invalid key is locked rather than reset or opened as plaintext. The deterministic `cliptown-fnv1a-v1` embedding is a private, offline retrieval baseline, not a claim of model-quality semantic understanding. Cloud synchronization remains disabled until authenticated device key management, encrypted R2 object transfer, and Postgres/CockroachDB backup contracts are implemented and verified.
 
-The Apple entitlement files deliberately declare an empty `keychain-access-groups`
-array so Keychain uses the app's default access group. Do not insert an application
-identifier prefix until the corresponding Apple team, provisioning profile, and
-signed release identity are configured: an explicit group on an ad-hoc-signed macOS
-debug build is rejected by taskgated before Flutter starts. Hosted macOS debug E2E
-therefore substitutes `macos/Runner/UnsignedDebug.entitlements`, which contains only
-unrestricted sandbox/debug entitlements; it does not claim to verify production
-Keychain persistence. Signed release acceptance must verify the real Keychain-backed
-vault separately.
+The Apple release entitlement files deliberately declare an empty
+`keychain-access-groups` array so Keychain uses the app's default access group. Do
+not insert an application identifier prefix until the corresponding Apple team,
+provisioning profile, and signed release identity are configured: any restricted
+keychain access-group entitlement on an ad-hoc-signed macOS debug build is rejected
+by taskgated before Flutter starts. macOS debug/profile builds therefore use the
+encrypted login Keychain without the data-protection access-group entitlement;
+signed release builds opt into the data-protection Keychain. Hosted macOS E2E proves
+debug Keychain persistence, while signed release acceptance must separately prove
+the provisioned production path.
 
 The independent native Rust/GPUI desktop client lives in [`cliptown-desktop.rs`](https://github.com/cliptown/cliptown-desktop.rs). The Rust and Flutter desktop applications are peer products: neither is a rewrite, compatibility shim, fallback, or successor to the other. Their behavior is validated against shared fixtures while each keeps its own UI toolkit, storage implementation, release artifacts, and roadmap.
 
