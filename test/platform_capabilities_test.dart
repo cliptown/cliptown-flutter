@@ -120,7 +120,7 @@ void main() {
     );
   });
 
-  test('desktop tray lifecycle is implemented without claiming capture', () {
+  test('desktop lifecycle and capture foundations remain evidence backed', () {
     for (final platform in <String>['macos', 'windows', 'linux']) {
       final capabilities = _map(_map(platforms[platform])['capabilities']);
       expect(
@@ -133,8 +133,13 @@ void main() {
       );
       expect(
         _map(capabilities['background_capture'])['implementation'],
-        'planned',
-        reason: '$platform tray behavior must not overclaim clipboard capture',
+        'foundation',
+        reason: '$platform capture must name native and policy evidence',
+      );
+      expect(
+        (_map(capabilities['background_capture'])['evidence'] as List<Object?>?)
+            ?.cast<String>(),
+        isNotEmpty,
       );
     }
 

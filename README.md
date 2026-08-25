@@ -4,7 +4,22 @@ Shared Flutter product surface for ClipTown desktop and mobile clients: encrypte
 
 ## Current foundation
 
-The application provides a testable local ClipTown shell with search, pinning, clip-kind previews, and a clear disconnected-sync state. On macOS, Windows, and supported Linux desktops it also installs a system-tray lifecycle: closing the main window hides it without terminating the process, and **Open ClipTown** restores a normal resizable 1100×760 window in the center of the active display. **Quit ClipTown** is the explicit process-exit path. It does not claim cloud synchronization or production encryption until the authentication, key-management, and SDK contracts are integrated.
+The application provides a testable local ClipTown shell with hybrid lexical/vector search, pinning, collections, a sequential-paste queue, configurable history size, safe transforms, rich clip-kind previews, and automatic text/image/file capture on supported desktops. On macOS, Windows, and supported Linux desktops it also installs a system-tray lifecycle: closing the main window hides it without terminating the process, and **Open ClipTown** restores a normal resizable 1100×760 window in the center of the active display. **Quit ClipTown** is the explicit process-exit path.
+
+Local clipboard records and 384-dimensional text vectors are stored in an SQLite3MultipleCiphers database. A random 256-bit database key is kept in platform secure storage; an existing database with a missing or invalid key is locked rather than reset or opened as plaintext. The deterministic `cliptown-fnv1a-v1` embedding is a private, offline retrieval baseline, not a claim of model-quality semantic understanding. Cloud synchronization remains disabled until authenticated device key management, encrypted R2 object transfer, and Postgres/CockroachDB backup contracts are implemented and verified.
+
+The Apple release entitlement files deliberately declare an empty
+`keychain-access-groups` array so Keychain uses the app's default access group. Do
+not insert an application identifier prefix until the corresponding Apple team,
+provisioning profile, and signed release identity are configured: any restricted
+keychain access-group entitlement on an ad-hoc-signed macOS debug build is rejected
+by taskgated before Flutter starts. macOS debug/profile builds therefore use the
+encrypted login Keychain without the data-protection access-group entitlement;
+signed release builds opt into the data-protection Keychain. Hosted macOS E2E proves
+debug Keychain persistence, while signed release acceptance must separately prove
+the provisioned production path.
+
+The independent native Rust/GPUI desktop client lives in [`cliptown-desktop.rs`](https://github.com/cliptown/cliptown-desktop.rs). The Rust and Flutter desktop applications are peer products: neither is a rewrite, compatibility shim, fallback, or successor to the other. Their behavior is validated against shared fixtures while each keeps its own UI toolkit, storage implementation, release artifacts, and roadmap.
 
 The sibling `cliptown-interfaces` checkout is required at `../cliptown-interfaces` for the generated Dart wire package.
 
@@ -13,6 +28,8 @@ The sibling `cliptown-interfaces` checkout is required at `../cliptown-interface
 - `lib/security/security_models.dart` defines revisioned pending/active/suspended/revoked devices, backup email/phone summaries, recovery challenges, and local biometric/passkey/PIN policy.
 - `lib/security/security_services.dart` defines narrow platform/provider boundaries for Signal Protocol, secure key storage, device enrollment/revocation, and recovery channels. It implements no cryptographic primitive.
 - `lib/security/encrypted_object_planner.dart` creates bounded, contiguous encrypted upload plans with randomized Cloudflare R2 storage paths. Actual AEAD and key wrapping remain in reviewed providers.
+- `lib/history/sqlite_clip_repository.dart` stores encrypted rich history plus Float32 text vectors in SQLite and refuses plaintext fallback.
+- `lib/clipboard/clipboard_service.dart` monitors and round-trips text, HTML, PNG, and file URI clipboard formats with explicit size bounds.
 - `lib/security/security_center_page.dart` provides a tested device/recovery management surface.
 
 The six-digit PIN is a local unlock factor for a random device-wrapping key; it is never the account master key, clipboard/file encryption key, recovery key, or server credential. Biometrics remain in platform authenticators and raw templates never leave the device. Backup email and phone OTP are recovery/step-up channels only.
@@ -25,9 +42,12 @@ dart format lib test integration_test
 flutter analyze --fatal-infos --fatal-warnings
 flutter test --coverage
 flutter test integration_test/desktop_lifecycle_test.dart -d macos
+flutter test integration_test/desktop_clipboard_e2e_test.dart -d macos
 ```
 
-GitHub Actions additionally builds Linux, macOS, Windows, Android, and iOS simulator targets and executes the same search-and-pin integration flow on Android and iOS emulators. Mobile tests target the explicit `integration_test/app_test.dart` entrypoint so directory discovery cannot silently skip or misroute the device test.
+GitHub Actions builds Linux, macOS, Windows, Android, and iOS simulator targets with pinned Flutter 3.44.2. Each desktop runner executes three installed-app journeys—create/search/pin, native clipboard capture/search/queue/copy, and close-to-background/tray restore—and uploads the application plus crash diagnostics. Android and iOS execute the product and security-center flows on emulators/simulators. A successful compile is not treated as an E2E pass.
+
+The feature benchmark and release-blocking parity gaps are tracked in [`docs/competitive-parity.md`](docs/competitive-parity.md). “Parity” means tested behavior under the relevant OS constraints; documentation or an unexercised code path does not count.
 
 ## Platform boundaries
 
