@@ -2,6 +2,11 @@
 
 Shared Flutter product surface for ClipTown desktop and mobile clients: encrypted clipboard history, device management, recovery, local search, and zero-knowledge synchronization.
 
+The app also contains a foreground-only Bluetooth LE proximity transport for
+encrypted clipboard and opaque Shared Auth/3FA requests. See
+[`docs/bluetooth-proximity.md`](docs/bluetooth-proximity.md); Bluetooth never
+counts as an authentication factor and mocked CI is not physical-radio proof.
+
 ## Current foundation
 
 The application provides a testable local ClipTown shell with hybrid lexical/vector search, pinning, collections, a sequential-paste queue, configurable history size, safe transforms, rich clip-kind previews, and automatic text/image/file capture on supported desktops. On macOS, Windows, and supported Linux desktops it also installs a system-tray lifecycle: closing the main window hides it without terminating the process, and **Open ClipTown** restores a normal resizable 1100×760 window in the center of the active display. **Quit ClipTown** is the explicit process-exit path.

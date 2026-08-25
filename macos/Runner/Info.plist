@@ -24,6 +24,10 @@
 	<string>$(MACOSX_DEPLOYMENT_TARGET)</string>
 	<key>NSHumanReadableCopyright</key>
 	<string>$(PRODUCT_COPYRIGHT)</string>
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>ClipTown uses Bluetooth only after you choose Nearby Share, to find an intended device and transfer encrypted clipboard data.</string>
+	<key>NSBluetoothPeripheralUsageDescription</key>
+	<string>ClipTown can advertise a rotating nearby identifier while the Nearby Share window is open.</string>
 	<key>NSMainNibFile</key>
 	<string>MainMenu</string>
 	<key>NSPrincipalClass</key>

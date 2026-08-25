@@ -26,6 +26,10 @@
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>ClipTown uses Bluetooth only after you choose Nearby Share, to find an intended device and transfer encrypted clipboard data when local networking is unavailable.</string>
+	<key>NSBluetoothPeripheralUsageDescription</key>
+	<string>ClipTown can advertise a rotating nearby identifier while the Nearby Share screen is open.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

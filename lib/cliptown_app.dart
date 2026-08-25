@@ -7,6 +7,7 @@ import 'clipboard/clipboard_controller.dart';
 import 'clipboard/clipboard_service.dart';
 import 'history/clip_item.dart';
 import 'history/text_transform.dart';
+import 'proximity/nearby_share_page.dart';
 import 'src/clip_store.dart';
 
 class ClipTownApp extends StatefulWidget {
@@ -108,6 +109,14 @@ class _ClipTownHomeState extends State<ClipTownHome> {
       appBar: AppBar(
         title: const Text('ClipTown'),
         actions: <Widget>[
+          IconButton(
+            key: const Key('nearby-share'),
+            tooltip: 'Nearby encrypted sharing',
+            onPressed: () => Navigator.of(context).push<void>(
+              MaterialPageRoute<void>(builder: (_) => const NearbySharePage()),
+            ),
+            icon: const Icon(Icons.bluetooth),
+          ),
           IconButton(
             key: const Key('privacy-settings'),
             tooltip: 'Privacy and capture settings',

@@ -57,6 +57,12 @@
           "implementation": "foundation",
           "evidence": ["lib/history/sqlite_clip_repository.dart", "test/sqlite_clip_repository_test.dart"]
         },
+        "bluetooth_proximity": {
+          "constraint": "permission_gated",
+          "implementation": "foundation",
+          "permission_notes": "Central and peripheral roles require macOS Bluetooth consent and the app-sandbox Bluetooth entitlement. ClipTown starts them only from the foreground Nearby Share UI.",
+          "evidence": ["lib/proximity/ble_proximity_transport.dart", "test/proximity_contract_test.dart", "macos/Runner/DebugProfile.entitlements"]
+        },
         "native_build": {
           "constraint": "available",
           "implementation": "verified",
@@ -107,6 +113,12 @@
           "constraint": "available",
           "implementation": "foundation",
           "evidence": ["lib/history/sqlite_clip_repository.dart", "test/sqlite_clip_repository_test.dart"]
+        },
+        "bluetooth_proximity": {
+          "constraint": "permission_gated",
+          "implementation": "foundation",
+          "permission_notes": "Central and peripheral roles require compatible Windows Bluetooth hardware and packaged-app bluetooth/radios declarations before distribution. ClipTown starts them only from the Nearby Share UI.",
+          "evidence": ["lib/proximity/ble_proximity_transport.dart", "test/proximity_contract_test.dart"]
         },
         "native_build": {
           "constraint": "available",
@@ -163,6 +175,12 @@
           "permission_notes": "A compatible Secret Service or desktop keyring must be available.",
           "evidence": ["lib/history/sqlite_clip_repository.dart", "test/sqlite_clip_repository_test.dart"]
         },
+        "bluetooth_proximity": {
+          "constraint": "permission_gated",
+          "implementation": "foundation",
+          "permission_notes": "The Flutter client implements the central role through BlueZ. Peripheral advertising is planned because the selected backend does not implement it on Linux; BlueZ access and packaging permissions remain deployment gates.",
+          "evidence": ["lib/proximity/ble_proximity_transport.dart", "test/proximity_contract_test.dart"]
+        },
         "native_build": {
           "constraint": "available",
           "implementation": "verified",
@@ -206,6 +224,12 @@
           "implementation": "foundation",
           "evidence": ["lib/history/sqlite_clip_repository.dart", "test/sqlite_clip_repository_test.dart"]
         },
+        "bluetooth_proximity": {
+          "constraint": "foreground_only",
+          "implementation": "foundation",
+          "reason": "ClipTown allows central/peripheral proximity work only while the explicit Nearby Share screen is active; it does not declare background BLE modes.",
+          "evidence": ["lib/proximity/ble_proximity_transport.dart", "lib/proximity/nearby_share_page.dart", "test/proximity_contract_test.dart"]
+        },
         "native_build": {
           "constraint": "available",
           "implementation": "verified",
@@ -248,6 +272,12 @@
           "constraint": "available",
           "implementation": "foundation",
           "evidence": ["lib/history/sqlite_clip_repository.dart", "test/sqlite_clip_repository_test.dart"]
+        },
+        "bluetooth_proximity": {
+          "constraint": "foreground_only",
+          "implementation": "foundation",
+          "reason": "Android scan/connect/advertise permissions are requested only from the explicit Nearby Share screen, with BLUETOOTH_SCAN marked neverForLocation on Android 12+.",
+          "evidence": ["lib/proximity/ble_proximity_transport.dart", "lib/proximity/nearby_share_page.dart", "test/proximity_contract_test.dart", "android/app/src/main/AndroidManifest.xml"]
         },
         "native_build": {
           "constraint": "available",
