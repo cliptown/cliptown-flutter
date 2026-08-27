@@ -11,9 +11,6 @@ import 'history/clip_repository.dart';
 import 'history/sqlite_clip_repository.dart';
 import 'src/clip_store.dart';
 
-DesktopLifecycleHost? _desktopLifecycleHost;
-ClipboardController? _clipboardController;
-
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   ClipRepository repository;
@@ -28,23 +25,25 @@ Future<void> main() async {
   var desktopBackgroundEnabled = false;
   var desktopHotKeyEnabled = false;
   final isDesktop = Platform.isMacOS || Platform.isWindows || Platform.isLinux;
+  DesktopLifecycleHost? desktopLifecycleHost;
   if (isDesktop) {
-    _desktopLifecycleHost = DesktopLifecycleHost();
-    desktopBackgroundEnabled = await _desktopLifecycleHost!.initialize();
-    desktopHotKeyEnabled = _desktopLifecycleHost!.hotKeyReady;
+    desktopLifecycleHost = DesktopLifecycleHost();
+    desktopBackgroundEnabled = await desktopLifecycleHost.initialize();
+    desktopHotKeyEnabled = desktopLifecycleHost.hotKeyReady;
   }
 
-  _clipboardController = ClipboardController(
+  final clipboardController = ClipboardController(
     store: store,
     service: SystemClipClipboardService(),
     automaticCaptureSupported: isDesktop,
   );
-  await _clipboardController!.initialize();
+  await clipboardController.initialize();
 
   runApp(
     ClipTownApp(
       store: store,
-      clipboardController: _clipboardController,
+      clipboardController: clipboardController,
+      desktopLifecycleHost: desktopLifecycleHost,
       desktopBackgroundEnabled: desktopBackgroundEnabled,
       desktopHotKeyEnabled: desktopHotKeyEnabled,
     ),

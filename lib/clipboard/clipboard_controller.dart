@@ -6,6 +6,7 @@ import '../history/capture_policy.dart';
 import '../history/clip_item.dart';
 import '../history/text_transform.dart';
 import '../src/clip_store.dart';
+import '../src/clipboard_snapshots.dart';
 import 'clipboard_service.dart';
 
 class ClipboardController extends ChangeNotifier {
@@ -13,18 +14,28 @@ class ClipboardController extends ChangeNotifier {
     required this.store,
     required this.service,
     this.automaticCaptureSupported = false,
-  });
+  }) {
+    _uiSubscription = _ui.stream.skip(1).listen((_) {
+      if (!_disposed) notifyListeners();
+    });
+  }
 
   final ClipStore store;
   final ClipClipboardService service;
   final bool automaticCaptureSupported;
+  final ClipboardSnapshotBus _ui = ClipboardSnapshotBus();
+  StreamSubscription<ClipboardUiSnapshot>? _uiSubscription;
   bool _disposed = false;
-  bool _busy = false;
-  String? _errorMessage;
 
-  bool get monitoring => service.monitoring;
-  bool get busy => _busy;
-  String? get errorMessage => _errorMessage;
+  Stream<ClipboardUiSnapshot> get snapshots => _ui.stream;
+
+  ClipboardUiSnapshot get snapshot => _ui.value;
+
+  bool get monitoring => snapshot.monitoring;
+  bool get busy => snapshot.busy;
+  String? get errorMessage => snapshot.errorMessage;
+
+  void _publish(ClipboardUiSnapshot next) => _ui.publish(next);
 
   Future<void> initialize() async {
     if (automaticCaptureSupported && store.captureEnabled) {
@@ -36,14 +47,13 @@ class ClipboardController extends ChangeNotifier {
     if (store.vaultLocked) return;
     store.setCaptureEnabled(enabled);
     if (!automaticCaptureSupported) {
-      notifyListeners();
       return;
     }
     if (enabled) {
       await _startMonitoring();
     } else {
       await service.stop();
-      notifyListeners();
+      _publish(snapshot.copyWith(monitoring: false));
     }
   }
 
@@ -87,41 +97,50 @@ class ClipboardController extends ChangeNotifier {
 
   Future<void> _startMonitoring() async {
     try {
-      await service.start((snapshot) async {
-        final result = await store.capture(snapshot);
+      await service.start((clipboardSnapshot) async {
+        final result = await store.capture(clipboardSnapshot);
         if (!result.accepted &&
             result.rejectionReason == CaptureRejectionReason.vaultUnavailable) {
           await service.stop();
+          _publish(snapshot.copyWith(monitoring: false));
         }
       });
-      _errorMessage = null;
+      _publish(snapshot.copyWith(monitoring: true, errorMessage: null));
     } on Object {
       store.setCaptureEnabled(false);
-      _errorMessage = 'Automatic clipboard capture is unavailable';
+      _publish(
+        snapshot.copyWith(
+          monitoring: false,
+          errorMessage: 'Automatic clipboard capture is unavailable',
+        ),
+      );
     }
-    notifyListeners();
   }
 
   Future<T> _run<T>(Future<T> Function() operation) async {
-    _busy = true;
-    _errorMessage = null;
-    notifyListeners();
+    _publish(snapshot.copyWith(busy: true, errorMessage: null));
     try {
       return await operation();
     } on Object {
-      _errorMessage =
-          'Clipboard operation failed without exposing its contents';
-      notifyListeners();
+      _publish(
+        snapshot.copyWith(
+          errorMessage:
+              'Clipboard operation failed without exposing its contents',
+        ),
+      );
       rethrow;
     } finally {
-      _busy = false;
-      if (!_disposed) notifyListeners();
+      if (!_disposed) {
+        _publish(snapshot.copyWith(busy: false));
+      }
     }
   }
 
   @override
   void dispose() {
     _disposed = true;
+    unawaited(_uiSubscription?.cancel());
+    unawaited(_ui.close());
     unawaited(service.stop());
     super.dispose();
   }

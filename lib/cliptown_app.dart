@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 
 import 'clipboard/clipboard_controller.dart';
 import 'clipboard/clipboard_service.dart';
+import 'desktop/desktop_lifecycle_host.dart';
 import 'history/clip_item.dart';
 import 'history/text_transform.dart';
 import 'proximity/nearby_share_page.dart';
@@ -15,12 +16,14 @@ class ClipTownApp extends StatefulWidget {
     super.key,
     this.store,
     this.clipboardController,
+    this.desktopLifecycleHost,
     this.desktopBackgroundEnabled = false,
     this.desktopHotKeyEnabled = false,
   });
 
   final ClipStore? store;
   final ClipboardController? clipboardController;
+  final DesktopLifecycleHost? desktopLifecycleHost;
   final bool desktopBackgroundEnabled;
   final bool desktopHotKeyEnabled;
 
@@ -46,6 +49,7 @@ class _ClipTownAppState extends State<ClipTownApp> {
   void dispose() {
     if (ownsClipboardController) clipboardController.dispose();
     if (ownsStore) store.dispose();
+    unawaited(widget.desktopLifecycleHost?.dispose());
     super.dispose();
   }
 
