@@ -22,12 +22,13 @@
         "search_and_pin": {
           "constraint": "available",
           "implementation": "foundation",
-          "evidence": ["test/clip_store_test.dart", "test/cliptown_app_test.dart"]
+          "evidence": ["test/clip_store_test.dart", "test/widget_test.dart", "test/sqlite_clip_repository_test.dart"]
         },
         "clipboard_monitoring": {
           "constraint": "permission_gated",
-          "implementation": "planned",
-          "permission_notes": "Capture must be explicit, visible, pausable, and compatible with macOS privacy controls."
+          "implementation": "foundation",
+          "permission_notes": "Capture is explicit, visible, pausable, and compatible with macOS privacy controls.",
+          "evidence": ["lib/clipboard/clipboard_controller.dart", "integration_test/desktop_clipboard_e2e_test.dart"]
         },
         "tray_or_menu_bar": {
           "constraint": "available",
@@ -41,17 +42,26 @@
         },
         "global_shortcut": {
           "constraint": "permission_gated",
-          "implementation": "planned",
-          "permission_notes": "Shortcut registration and any Accessibility access require clear onboarding and revocation UI."
+          "implementation": "foundation",
+          "permission_notes": "Shortcut registration and any Accessibility access require clear onboarding and revocation UI.",
+          "evidence": ["lib/desktop/desktop_lifecycle_host.dart", ".github/workflows/test.yml"]
         },
         "background_capture": {
           "constraint": "permission_gated",
-          "implementation": "planned",
-          "permission_notes": "Only while the installed app is running with user-visible controls; never as hidden surveillance."
+          "implementation": "foundation",
+          "permission_notes": "Only while the installed app is running with user-visible controls; never as hidden surveillance.",
+          "evidence": ["lib/clipboard/clipboard_controller.dart", "lib/history/capture_policy.dart", "integration_test/desktop_clipboard_e2e_test.dart"]
         },
         "secure_storage": {
           "constraint": "available",
-          "implementation": "planned"
+          "implementation": "foundation",
+          "evidence": ["lib/history/sqlite_clip_repository.dart", "test/sqlite_clip_repository_test.dart"]
+        },
+        "bluetooth_proximity": {
+          "constraint": "permission_gated",
+          "implementation": "foundation",
+          "permission_notes": "Central and peripheral roles require macOS Bluetooth consent and the app-sandbox Bluetooth entitlement. ClipTown starts them only from the foreground Nearby Share UI.",
+          "evidence": ["lib/proximity/ble_proximity_transport.dart", "test/proximity_contract_test.dart", "macos/Runner/DebugProfile.entitlements"]
         },
         "native_build": {
           "constraint": "available",
@@ -70,12 +80,13 @@
         "search_and_pin": {
           "constraint": "available",
           "implementation": "foundation",
-          "evidence": ["test/clip_store_test.dart", "test/cliptown_app_test.dart"]
+          "evidence": ["test/clip_store_test.dart", "test/widget_test.dart", "test/sqlite_clip_repository_test.dart"]
         },
         "clipboard_monitoring": {
           "constraint": "permission_gated",
-          "implementation": "planned",
-          "permission_notes": "Capture requires visible user controls, per-application exclusions, and protected-content filtering."
+          "implementation": "foundation",
+          "permission_notes": "Capture requires visible user controls, per-application exclusions, and protected-content filtering.",
+          "evidence": ["lib/clipboard/clipboard_controller.dart", "integration_test/desktop_clipboard_e2e_test.dart"]
         },
         "tray_or_menu_bar": {
           "constraint": "available",
@@ -89,16 +100,25 @@
         },
         "global_shortcut": {
           "constraint": "available",
-          "implementation": "planned"
+          "implementation": "foundation",
+          "evidence": ["lib/desktop/desktop_lifecycle_host.dart", ".github/workflows/test.yml"]
         },
         "background_capture": {
           "constraint": "permission_gated",
-          "implementation": "planned",
-          "permission_notes": "Only while the installed application is running with clear pause and exit controls."
+          "implementation": "foundation",
+          "permission_notes": "Only while the installed application is running with clear pause and exit controls.",
+          "evidence": ["lib/clipboard/clipboard_controller.dart", "lib/history/capture_policy.dart", "integration_test/desktop_clipboard_e2e_test.dart"]
         },
         "secure_storage": {
           "constraint": "available",
-          "implementation": "planned"
+          "implementation": "foundation",
+          "evidence": ["lib/history/sqlite_clip_repository.dart", "test/sqlite_clip_repository_test.dart"]
+        },
+        "bluetooth_proximity": {
+          "constraint": "permission_gated",
+          "implementation": "foundation",
+          "permission_notes": "Central and peripheral roles require compatible Windows Bluetooth hardware and packaged-app bluetooth/radios declarations before distribution. ClipTown starts them only from the Nearby Share UI.",
+          "evidence": ["lib/proximity/ble_proximity_transport.dart", "test/proximity_contract_test.dart"]
         },
         "native_build": {
           "constraint": "available",
@@ -117,12 +137,13 @@
         "search_and_pin": {
           "constraint": "available",
           "implementation": "foundation",
-          "evidence": ["test/clip_store_test.dart", "test/cliptown_app_test.dart"]
+          "evidence": ["test/clip_store_test.dart", "test/widget_test.dart", "test/sqlite_clip_repository_test.dart"]
         },
         "clipboard_monitoring": {
           "constraint": "permission_gated",
-          "implementation": "planned",
-          "permission_notes": "Wayland and X11 differ; capture must use the active desktop protocol and explicit user controls."
+          "implementation": "foundation",
+          "permission_notes": "Wayland and X11 differ; capture must use the active desktop protocol and explicit user controls.",
+          "evidence": ["lib/clipboard/clipboard_controller.dart", "integration_test/desktop_clipboard_e2e_test.dart"]
         },
         "tray_or_menu_bar": {
           "constraint": "permission_gated",
@@ -138,18 +159,27 @@
         },
         "global_shortcut": {
           "constraint": "permission_gated",
-          "implementation": "planned",
-          "permission_notes": "Desktop portal or compositor support may be required."
+          "implementation": "foundation",
+          "permission_notes": "Desktop portal or compositor support may be required.",
+          "evidence": ["lib/desktop/desktop_lifecycle_host.dart", ".github/workflows/test.yml"]
         },
         "background_capture": {
           "constraint": "permission_gated",
-          "implementation": "planned",
-          "permission_notes": "Only while the installed application is running with visible pause and exit controls."
+          "implementation": "foundation",
+          "permission_notes": "Only while the installed application is running with visible pause and exit controls.",
+          "evidence": ["lib/clipboard/clipboard_controller.dart", "lib/history/capture_policy.dart", "integration_test/desktop_clipboard_e2e_test.dart"]
         },
         "secure_storage": {
           "constraint": "permission_gated",
-          "implementation": "planned",
-          "permission_notes": "A compatible Secret Service or desktop keyring must be available."
+          "implementation": "foundation",
+          "permission_notes": "A compatible Secret Service or desktop keyring must be available.",
+          "evidence": ["lib/history/sqlite_clip_repository.dart", "test/sqlite_clip_repository_test.dart"]
+        },
+        "bluetooth_proximity": {
+          "constraint": "permission_gated",
+          "implementation": "foundation",
+          "permission_notes": "The Flutter client implements the central role through BlueZ. Peripheral advertising is planned because the selected backend does not implement it on Linux; BlueZ access and packaging permissions remain deployment gates.",
+          "evidence": ["lib/proximity/ble_proximity_transport.dart", "test/proximity_contract_test.dart"]
         },
         "native_build": {
           "constraint": "available",
@@ -191,7 +221,14 @@
         },
         "secure_storage": {
           "constraint": "available",
-          "implementation": "planned"
+          "implementation": "foundation",
+          "evidence": ["lib/history/sqlite_clip_repository.dart", "test/sqlite_clip_repository_test.dart"]
+        },
+        "bluetooth_proximity": {
+          "constraint": "foreground_only",
+          "implementation": "foundation",
+          "reason": "ClipTown allows central/peripheral proximity work only while the explicit Nearby Share screen is active; it does not declare background BLE modes.",
+          "evidence": ["lib/proximity/ble_proximity_transport.dart", "lib/proximity/nearby_share_page.dart", "test/proximity_contract_test.dart"]
         },
         "native_build": {
           "constraint": "available",
@@ -233,7 +270,14 @@
         },
         "secure_storage": {
           "constraint": "available",
-          "implementation": "planned"
+          "implementation": "foundation",
+          "evidence": ["lib/history/sqlite_clip_repository.dart", "test/sqlite_clip_repository_test.dart"]
+        },
+        "bluetooth_proximity": {
+          "constraint": "foreground_only",
+          "implementation": "foundation",
+          "reason": "Android scan/connect/advertise permissions are requested only from the explicit Nearby Share screen, with BLUETOOTH_SCAN marked neverForLocation on Android 12+.",
+          "evidence": ["lib/proximity/ble_proximity_transport.dart", "lib/proximity/nearby_share_page.dart", "test/proximity_contract_test.dart", "android/app/src/main/AndroidManifest.xml"]
         },
         "native_build": {
           "constraint": "available",

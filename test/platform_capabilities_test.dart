@@ -38,6 +38,7 @@ void main() {
       'clipboard_monitoring',
       'background_capture',
       'secure_storage',
+      'bluetooth_proximity',
       'native_build',
       'signed_distribution',
     };
@@ -120,7 +121,27 @@ void main() {
     );
   });
 
-  test('desktop tray lifecycle is implemented without claiming capture', () {
+  test(
+    'Bluetooth is foreground or permission gated and never release proof',
+    () {
+      for (final platformEntry in platforms.entries) {
+        final capabilities = _map(_map(platformEntry.value)['capabilities']);
+        final bluetooth = _map(capabilities['bluetooth_proximity']);
+        expect(
+          bluetooth['constraint'],
+          anyOf('permission_gated', 'foreground_only'),
+        );
+        expect(bluetooth['implementation'], 'foundation');
+        expect(
+          (bluetooth['evidence'] as List<Object?>).cast<String>(),
+          contains('test/proximity_contract_test.dart'),
+        );
+      }
+      expect(_map(document['release_state'])['production_downloads'], isFalse);
+    },
+  );
+
+  test('desktop lifecycle and capture foundations remain evidence backed', () {
     for (final platform in <String>['macos', 'windows', 'linux']) {
       final capabilities = _map(_map(platforms[platform])['capabilities']);
       expect(
@@ -133,8 +154,13 @@ void main() {
       );
       expect(
         _map(capabilities['background_capture'])['implementation'],
-        'planned',
-        reason: '$platform tray behavior must not overclaim clipboard capture',
+        'foundation',
+        reason: '$platform capture must name native and policy evidence',
+      );
+      expect(
+        (_map(capabilities['background_capture'])['evidence'] as List<Object?>?)
+            ?.cast<String>(),
+        isNotEmpty,
       );
     }
 

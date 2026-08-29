@@ -1,8 +1,8 @@
 import 'dart:async';
 import 'dart:io';
-import 'dart:ui';
-
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
+import 'package:hotkey_manager/hotkey_manager.dart';
 import 'package:tray_manager/tray_manager.dart';
 import 'package:window_manager/window_manager.dart';
 
@@ -20,6 +20,15 @@ DesktopTrayAction? desktopTrayActionForMenuKey(String? key) => switch (key) {
   _ => null,
 };
 
+HotKey desktopHistoryHotKeyForPlatform({required bool isMacOS}) => HotKey(
+  identifier: 'cliptown.open-history',
+  key: PhysicalKeyboardKey.keyV,
+  modifiers: <HotKeyModifier>[
+    isMacOS ? HotKeyModifier.meta : HotKeyModifier.control,
+    HotKeyModifier.shift,
+  ],
+);
+
 class DesktopLifecycleHost with WindowListener, TrayListener {
   DesktopLifecycleHost({AppStateMachine? stateMachine})
     : controller = DesktopLifecycleController(
@@ -30,9 +39,12 @@ class DesktopLifecycleHost with WindowListener, TrayListener {
 
   final DesktopLifecycleController controller;
   bool _trayReady = false;
+  bool _hotKeyReady = false;
+  HotKey? _historyHotKey;
   Future<void> _windowReady = Future<void>.value();
 
   bool get trayReady => _trayReady;
+  bool get hotKeyReady => _hotKeyReady;
   Future<void> get windowReady => _windowReady;
 
   Future<bool> initialize() async {
@@ -69,6 +81,7 @@ class DesktopLifecycleHost with WindowListener, TrayListener {
       controller.openMainWindow,
     );
     unawaited(_windowReady);
+    await _configureHistoryHotKey();
     return _trayReady;
   }
 
@@ -78,10 +91,32 @@ class DesktopLifecycleHost with WindowListener, TrayListener {
 
     final trayWasReady = _trayReady;
     _trayReady = false;
+    final historyHotKey = _historyHotKey;
+    _historyHotKey = null;
+    _hotKeyReady = false;
     try {
+      if (historyHotKey != null) {
+        await hotKeyManager.unregister(historyHotKey);
+      }
       if (trayWasReady) await trayManager.destroy();
     } finally {
       await windowManager.setPreventClose(false);
+    }
+  }
+
+  Future<void> _configureHistoryHotKey() async {
+    final hotKey = desktopHistoryHotKeyForPlatform(isMacOS: Platform.isMacOS);
+    try {
+      await hotKeyManager.register(
+        hotKey,
+        keyDownHandler: (_) => unawaited(controller.openMainWindow()),
+      );
+      _historyHotKey = hotKey;
+      _hotKeyReady = true;
+    } on Object catch (error) {
+      _historyHotKey = null;
+      _hotKeyReady = false;
+      debugPrint('ClipTown global history shortcut is unavailable: $error');
     }
   }
 

@@ -19,7 +19,10 @@ android {
         applicationId = "com.cliptown.cliptown_app"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
-        minSdk = flutter.minSdkVersion
+        // universal_ble's Android backend requires API 24. Keeping this
+        // explicit prevents a dependency update from silently changing the
+        // minimum supported ClipTown device.
+        minSdk = 24
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
