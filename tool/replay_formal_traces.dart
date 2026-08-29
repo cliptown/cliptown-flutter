@@ -8,6 +8,9 @@ const _actionField = 'mbt::actionTaken';
 final _eventsByFormalAction = <String, AppEvent>{
   'boot_signed_out': AppEvent.bootSignedOut,
   'boot_authenticated': AppEvent.bootAuthenticated,
+  'boot_local_ready_capture_on': AppEvent.bootLocalReadyCaptureOn,
+  'boot_local_ready_capture_off': AppEvent.bootLocalReadyCaptureOff,
+  'boot_vault_unavailable': AppEvent.bootVaultUnavailable,
   'sign_in_succeeded': AppEvent.signInSucceeded,
   'device_approved': AppEvent.deviceApproved,
   'device_resumed': AppEvent.deviceResumed,
@@ -23,6 +26,12 @@ final _eventsByFormalAction = <String, AppEvent>{
   'sync_succeeded': AppEvent.syncSucceeded,
   'sync_failed': AppEvent.syncFailed,
   'retry_requested': AppEvent.retryRequested,
+  'capture_enabled': AppEvent.captureEnabled,
+  'capture_disabled': AppEvent.captureDisabled,
+  'capture_monitoring_started': AppEvent.captureMonitoringStarted,
+  'capture_monitoring_stopped': AppEvent.captureMonitoringStopped,
+  'capture_failed': AppEvent.captureFailed,
+  'capture_recovered': AppEvent.captureRecovered,
   'foreground_requested': AppEvent.foregroundRequested,
   'background_requested': AppEvent.backgroundRequested,
   'shutdown_requested': AppEvent.shutdownRequested,
@@ -118,10 +127,12 @@ Map<String, Object> _decodeFormalState(Object? raw, String path, int index) {
     'local_device',
     'vault',
     'sync',
+    'capture',
     'revision',
   ];
   const booleanFields = <String>[
     'online',
+    'capture_requested',
     'window_visible',
     'revocation_observed',
   ];

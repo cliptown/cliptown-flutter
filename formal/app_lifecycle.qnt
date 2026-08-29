@@ -8,6 +8,8 @@ module app_lifecycle {
     local_device: int,
     vault: int,
     sync: int,
+    capture: int,
+    capture_requested: bool,
     online: bool,
     window_visible: bool,
     revocation_observed: bool,
@@ -45,6 +47,11 @@ module app_lifecycle {
   pure val SYNC_RUNNING = 2
   pure val SYNC_BACKOFF = 3
 
+  pure val CAPTURE_DISABLED = 0
+  pure val CAPTURE_READY = 1
+  pure val CAPTURE_MONITORING = 2
+  pure val CAPTURE_FAULTED = 3
+
   pure val LIFECYCLES: Set[int] = Set(
     LIFECYCLE_STARTING,
     LIFECYCLE_FOREGROUND,
@@ -77,6 +84,12 @@ module app_lifecycle {
     SYNC_RUNNING,
     SYNC_BACKOFF
   )
+  pure val CAPTURE_STATES: Set[int] = Set(
+    CAPTURE_DISABLED,
+    CAPTURE_READY,
+    CAPTURE_MONITORING,
+    CAPTURE_FAULTED
+  )
 
   var s: State
 
@@ -87,6 +100,8 @@ module app_lifecycle {
     local_device: DEVICE_PENDING,
     vault: VAULT_UNAVAILABLE,
     sync: SYNC_DISABLED,
+    capture: CAPTURE_DISABLED,
+    capture_requested: false,
     online: false,
     window_visible: false,
     revocation_observed: false,
@@ -98,8 +113,7 @@ module app_lifecycle {
       snapshot.lifecycle
     )
 
-  pure def sensitive_work_allowed(snapshot: State): bool = and {
-    snapshot.authentication == AUTH_AUTHENTICATED,
+  pure def local_work_allowed(snapshot: State): bool = and {
     snapshot.local_device == DEVICE_ACTIVE,
     snapshot.vault == VAULT_UNLOCKED,
     or {
@@ -109,6 +123,17 @@ module app_lifecycle {
         snapshot.lifecycle == LIFECYCLE_BACKGROUND,
       },
     },
+  }
+
+  pure def sensitive_work_allowed(snapshot: State): bool = and {
+    snapshot.authentication == AUTH_AUTHENTICATED,
+    local_work_allowed(snapshot),
+  }
+
+  pure def capture_work_allowed(snapshot: State): bool = and {
+    local_work_allowed(snapshot),
+    snapshot.capture_requested,
+    Set(CAPTURE_READY, CAPTURE_MONITORING).contains(snapshot.capture),
   }
 
   pure def locked_vault(vault: int): int =
@@ -136,6 +161,8 @@ module app_lifecycle {
       local_device: DEVICE_PENDING,
       vault: VAULT_UNAVAILABLE,
       sync: SYNC_DISABLED,
+      capture: CAPTURE_DISABLED,
+      capture_requested: false,
       window_visible: true,
       revision: s.revision + 1,
     },
@@ -150,6 +177,56 @@ module app_lifecycle {
       local_device: DEVICE_ACTIVE,
       vault: VAULT_LOCKED,
       sync: SYNC_DISABLED,
+      capture: CAPTURE_DISABLED,
+      capture_requested: false,
+      window_visible: true,
+      revision: s.revision + 1,
+    },
+  }
+
+  action boot_local_ready_capture_on = all {
+    s.lifecycle == LIFECYCLE_STARTING,
+    s' = {
+      ...s,
+      lifecycle: LIFECYCLE_FOREGROUND,
+      authentication: AUTH_SIGNED_OUT,
+      local_device: DEVICE_ACTIVE,
+      vault: VAULT_UNLOCKED,
+      sync: SYNC_DISABLED,
+      capture: CAPTURE_READY,
+      capture_requested: true,
+      window_visible: true,
+      revision: s.revision + 1,
+    },
+  }
+
+  action boot_local_ready_capture_off = all {
+    s.lifecycle == LIFECYCLE_STARTING,
+    s' = {
+      ...s,
+      lifecycle: LIFECYCLE_FOREGROUND,
+      authentication: AUTH_SIGNED_OUT,
+      local_device: DEVICE_ACTIVE,
+      vault: VAULT_UNLOCKED,
+      sync: SYNC_DISABLED,
+      capture: CAPTURE_DISABLED,
+      capture_requested: false,
+      window_visible: true,
+      revision: s.revision + 1,
+    },
+  }
+
+  action boot_vault_unavailable = all {
+    s.lifecycle == LIFECYCLE_STARTING,
+    s' = {
+      ...s,
+      lifecycle: LIFECYCLE_FOREGROUND,
+      authentication: AUTH_SIGNED_OUT,
+      local_device: DEVICE_PENDING,
+      vault: VAULT_UNAVAILABLE,
+      sync: SYNC_DISABLED,
+      capture: CAPTURE_DISABLED,
+      capture_requested: false,
       window_visible: true,
       revision: s.revision + 1,
     },
@@ -164,8 +241,11 @@ module app_lifecycle {
     s' = {
       ...s,
       authentication: AUTH_AUTHENTICATED,
-      vault: VAULT_LOCKED,
-      sync: SYNC_DISABLED,
+      vault: if (s.local_device == DEVICE_ACTIVE) s.vault else VAULT_LOCKED,
+      sync: if (and {
+        s.local_device == DEVICE_ACTIVE,
+        s.vault == VAULT_UNLOCKED,
+      }) SYNC_IDLE else SYNC_DISABLED,
       revision: s.revision + 1,
     },
   }
@@ -179,6 +259,7 @@ module app_lifecycle {
       local_device: DEVICE_ACTIVE,
       vault: VAULT_LOCKED,
       sync: SYNC_DISABLED,
+      capture: CAPTURE_DISABLED,
       revision: s.revision + 1,
     },
   }
@@ -192,13 +273,14 @@ module app_lifecycle {
       local_device: DEVICE_ACTIVE,
       vault: VAULT_LOCKED,
       sync: SYNC_DISABLED,
+      capture: CAPTURE_DISABLED,
       revision: s.revision + 1,
     },
   }
 
   action unlock_succeeded = all {
     operational(s),
-    s.authentication == AUTH_AUTHENTICATED,
+    Set(AUTH_SIGNED_OUT, AUTH_AUTHENTICATED).contains(s.authentication),
     s.local_device == DEVICE_ACTIVE,
     s.vault == VAULT_LOCKED,
     not(and {
@@ -208,7 +290,14 @@ module app_lifecycle {
     s' = {
       ...s,
       vault: VAULT_UNLOCKED,
-      sync: SYNC_IDLE,
+      sync: if (s.authentication == AUTH_AUTHENTICATED)
+        SYNC_IDLE
+      else
+        SYNC_DISABLED,
+      capture: if (s.capture_requested)
+        CAPTURE_READY
+      else
+        CAPTURE_DISABLED,
       revision: s.revision + 1,
     },
   }
@@ -219,6 +308,7 @@ module app_lifecycle {
       ...s,
       vault: VAULT_LOCKED,
       sync: SYNC_DISABLED,
+      capture: CAPTURE_DISABLED,
       revision: s.revision + 1,
     },
   }
@@ -232,6 +322,7 @@ module app_lifecycle {
       authentication: AUTH_REAUTHENTICATION_REQUIRED,
       vault: locked_vault(s.vault),
       sync: SYNC_DISABLED,
+      capture: CAPTURE_DISABLED,
       revision: s.revision + 1,
     },
   }
@@ -243,7 +334,6 @@ module app_lifecycle {
     s' = {
       ...s,
       authentication: AUTH_SIGNED_OUT,
-      vault: locked_vault(s.vault),
       sync: SYNC_DISABLED,
       revision: s.revision + 1,
     },
@@ -258,6 +348,7 @@ module app_lifecycle {
       local_device: DEVICE_SUSPENDED,
       vault: locked_vault(s.vault),
       sync: SYNC_DISABLED,
+      capture: CAPTURE_DISABLED,
       revision: s.revision + 1,
     },
   }
@@ -271,6 +362,8 @@ module app_lifecycle {
       local_device: DEVICE_REVOKED,
       vault: VAULT_DESTROYED,
       sync: SYNC_DISABLED,
+      capture: CAPTURE_DISABLED,
+      capture_requested: false,
       revocation_observed: true,
       revision: s.revision + 1,
     },
@@ -317,6 +410,68 @@ module app_lifecycle {
     s' = { ...s, sync: SYNC_RUNNING, revision: s.revision + 1 },
   }
 
+  action capture_enabled = all {
+    not(s.capture_requested),
+    s.capture == CAPTURE_DISABLED,
+    local_work_allowed(s),
+    s' = {
+      ...s,
+      capture: CAPTURE_READY,
+      capture_requested: true,
+      revision: s.revision + 1,
+    },
+  }
+
+  action capture_disabled = all {
+    s.capture_requested,
+    s' = {
+      ...s,
+      capture: CAPTURE_DISABLED,
+      capture_requested: false,
+      revision: s.revision + 1,
+    },
+  }
+
+  action capture_monitoring_started = all {
+    s.runtime == RUNTIME_DESKTOP,
+    s.capture == CAPTURE_READY,
+    capture_work_allowed(s),
+    s' = {
+      ...s,
+      capture: CAPTURE_MONITORING,
+      revision: s.revision + 1,
+    },
+  }
+
+  action capture_monitoring_stopped = all {
+    s.capture == CAPTURE_MONITORING,
+    s' = {
+      ...s,
+      capture: CAPTURE_READY,
+      revision: s.revision + 1,
+    },
+  }
+
+  action capture_failed = all {
+    Set(CAPTURE_READY, CAPTURE_MONITORING).contains(s.capture),
+    capture_work_allowed(s),
+    s' = {
+      ...s,
+      capture: CAPTURE_FAULTED,
+      revision: s.revision + 1,
+    },
+  }
+
+  action capture_recovered = all {
+    s.capture == CAPTURE_FAULTED,
+    local_work_allowed(s),
+    s' = {
+      ...s,
+      capture: CAPTURE_READY,
+      revision: s.revision + 1,
+    },
+  }
+
   action foreground_requested = all {
     operational(s),
     s' = {
@@ -338,6 +493,10 @@ module app_lifecycle {
       else
         s.vault,
       sync: if (s.runtime == RUNTIME_MOBILE) SYNC_DISABLED else s.sync,
+      capture: if (s.runtime == RUNTIME_MOBILE)
+        CAPTURE_DISABLED
+      else
+        s.capture,
       revision: s.revision + 1,
     },
   }
@@ -355,6 +514,7 @@ module app_lifecycle {
       window_visible: false,
       vault: locked_vault(s.vault),
       sync: SYNC_DISABLED,
+      capture: CAPTURE_DISABLED,
       revision: s.revision + 1,
     },
   }
@@ -367,6 +527,7 @@ module app_lifecycle {
       window_visible: false,
       vault: locked_vault(s.vault),
       sync: SYNC_DISABLED,
+      capture: CAPTURE_DISABLED,
       revision: s.revision + 1,
     },
   }
@@ -384,6 +545,7 @@ module app_lifecycle {
       window_visible: false,
       vault: locked_vault(s.vault),
       sync: SYNC_DISABLED,
+      capture: CAPTURE_DISABLED,
       revision: s.revision + 1,
     },
   }
@@ -393,6 +555,9 @@ module app_lifecycle {
   action step = any {
     boot_signed_out,
     boot_authenticated,
+    boot_local_ready_capture_on,
+    boot_local_ready_capture_off,
+    boot_vault_unavailable,
     sign_in_succeeded,
     device_approved,
     device_resumed,
@@ -408,6 +573,12 @@ module app_lifecycle {
     sync_succeeded,
     sync_failed,
     retry_requested,
+    capture_enabled,
+    capture_disabled,
+    capture_monitoring_started,
+    capture_monitoring_stopped,
+    capture_failed,
+    capture_recovered,
     foreground_requested,
     background_requested,
     shutdown_requested,
@@ -423,17 +594,23 @@ module app_lifecycle {
     DEVICE_STATES.contains(s.local_device),
     VAULT_STATES.contains(s.vault),
     SYNC_STATES.contains(s.sync),
+    CAPTURE_STATES.contains(s.capture),
     s.revision >= 0,
   }
 
   val window_coherence =
     s.window_visible == (s.lifecycle == LIFECYCLE_FOREGROUND)
 
-  val authentication_gate = or {
-    s.authentication == AUTH_AUTHENTICATED,
-    and {
-      s.vault != VAULT_UNLOCKED,
+  val authentication_gate = and {
+    or {
+      s.authentication == AUTH_AUTHENTICATED,
       s.sync == SYNC_DISABLED,
+    },
+    or {
+      not(Set(AUTH_REAUTHENTICATION_REQUIRED, AUTH_REVOKED).contains(
+        s.authentication
+      )),
+      s.vault != VAULT_UNLOCKED,
     },
   }
 
@@ -442,6 +619,7 @@ module app_lifecycle {
     and {
       s.vault != VAULT_UNLOCKED,
       s.sync == SYNC_DISABLED,
+      s.capture == CAPTURE_DISABLED,
     },
   }
 
@@ -453,12 +631,28 @@ module app_lifecycle {
     and { s.online, sensitive_work_allowed(s) },
   }
 
+  val capture_intent_gate = or {
+    s.capture_requested,
+    s.capture == CAPTURE_DISABLED,
+  }
+
+  val capture_local_work_gate = or {
+    s.capture == CAPTURE_DISABLED,
+    local_work_allowed(s),
+  }
+
+  val capture_monitoring_gate = or {
+    s.capture != CAPTURE_MONITORING,
+    s.runtime == RUNTIME_DESKTOP,
+  }
+
   val mobile_background_gate = or {
     s.runtime != RUNTIME_MOBILE,
     s.lifecycle != LIFECYCLE_BACKGROUND,
     and {
       s.vault != VAULT_UNLOCKED,
       s.sync == SYNC_DISABLED,
+      s.capture == CAPTURE_DISABLED,
     },
   }
 
@@ -472,6 +666,7 @@ module app_lifecycle {
     and {
       s.vault != VAULT_UNLOCKED,
       s.sync == SYNC_DISABLED,
+      s.capture == CAPTURE_DISABLED,
     },
   }
 
@@ -483,6 +678,8 @@ module app_lifecycle {
         s.authentication == AUTH_REVOKED,
         s.vault == VAULT_DESTROYED,
         s.sync == SYNC_DISABLED,
+        s.capture == CAPTURE_DISABLED,
+        not(s.capture_requested),
       },
     },
     s.vault != VAULT_DESTROYED or s.local_device == DEVICE_REVOKED,
@@ -495,6 +692,9 @@ module app_lifecycle {
     device_gate,
     vault_gate,
     running_sync_gate,
+    capture_intent_gate,
+    capture_local_work_gate,
+    capture_monitoring_gate,
     mobile_background_gate,
     non_operational_gate,
     revocation_monotonicity,
@@ -503,6 +703,9 @@ module app_lifecycle {
   val unlocked_reached = s.vault == VAULT_UNLOCKED
   val running_sync_reached = s.sync == SYNC_RUNNING
   val retry_backoff_reached = s.sync == SYNC_BACKOFF
+  val capture_ready_reached = s.capture == CAPTURE_READY
+  val capture_monitoring_reached = s.capture == CAPTURE_MONITORING
+  val capture_faulted_reached = s.capture == CAPTURE_FAULTED
   val mobile_background_locked_reached = and {
     s.runtime == RUNTIME_MOBILE,
     s.lifecycle == LIFECYCLE_BACKGROUND,

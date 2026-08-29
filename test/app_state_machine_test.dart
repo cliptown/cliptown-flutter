@@ -97,6 +97,83 @@ void main() {
     },
   );
 
+  test('offline local mode permits capture but never cloud sync', () {
+    final state = AppMachineState.localReady(
+      AppRuntimeKind.mobile,
+      captureRequested: true,
+    );
+
+    expect(state.authentication, AppAuthenticationState.signedOut);
+    expect(state.permitsLocalWork, isTrue);
+    expect(state.permitsCaptureWork, isTrue);
+    expect(state.permitsSensitiveWork, isFalse);
+    expect(
+      AppTransitionSystem.transition(state, AppEvent.syncRequested).accepted,
+      isFalse,
+    );
+    expect(state.invariantViolations(), isEmpty);
+  });
+
+  test('capture fault denies work until an explicit valid recovery', () {
+    var state = AppMachineState.localReady(
+      AppRuntimeKind.desktop,
+      captureRequested: true,
+    );
+
+    for (final event in <AppEvent>[
+      AppEvent.captureMonitoringStarted,
+      AppEvent.captureFailed,
+    ]) {
+      final transition = AppTransitionSystem.transition(state, event);
+      expect(transition.accepted, isTrue, reason: event.name);
+      state = transition.next;
+    }
+
+    expect(state.capture, AppCaptureState.faulted);
+    expect(state.captureRequested, isTrue);
+    expect(state.permitsCaptureWork, isFalse);
+    final recovered = AppTransitionSystem.transition(
+      state,
+      AppEvent.captureRecovered,
+    );
+    expect(recovered.accepted, isTrue);
+    expect(recovered.next.capture, AppCaptureState.ready);
+    expect(recovered.next.permitsCaptureWork, isTrue);
+  });
+
+  test('mobile background preserves intent but requires a fresh unlock', () {
+    var state = AppMachineState.localReady(
+      AppRuntimeKind.mobile,
+      captureRequested: true,
+    );
+
+    final background = AppTransitionSystem.transition(
+      state,
+      AppEvent.backgroundRequested,
+    );
+    expect(background.accepted, isTrue);
+    state = background.next;
+    expect(state.captureRequested, isTrue);
+    expect(state.capture, AppCaptureState.disabled);
+    expect(state.vault, AppVaultState.locked);
+
+    final foreground = AppTransitionSystem.transition(
+      state,
+      AppEvent.foregroundRequested,
+    );
+    expect(foreground.accepted, isTrue);
+    state = foreground.next;
+    expect(state.permitsCaptureWork, isFalse);
+
+    final unlocked = AppTransitionSystem.transition(
+      state,
+      AppEvent.unlockSucceeded,
+    );
+    expect(unlocked.accepted, isTrue);
+    expect(unlocked.next.capture, AppCaptureState.ready);
+    expect(unlocked.next.permitsCaptureWork, isTrue);
+  });
+
   test('revocation is monotonic across every subsequently accepted event', () {
     final active = _unlockedOnlineState(AppRuntimeKind.desktop);
     final revoked = AppTransitionSystem.transition(

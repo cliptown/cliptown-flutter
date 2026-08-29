@@ -7,6 +7,7 @@ import '../history/clip_item.dart';
 import '../history/text_transform.dart';
 import '../src/clip_store.dart';
 import '../src/clipboard_snapshots.dart';
+import '../state/app_state_machine.dart';
 import 'clipboard_service.dart';
 
 class ClipboardController extends ChangeNotifier {
@@ -14,17 +15,30 @@ class ClipboardController extends ChangeNotifier {
     required this.store,
     required this.service,
     this.automaticCaptureSupported = false,
-  }) {
+    AppStateMachine? stateMachine,
+  }) : stateMachine =
+           stateMachine ??
+           AppStateMachine.localReady(
+             automaticCaptureSupported
+                 ? AppRuntimeKind.desktop
+                 : AppRuntimeKind.mobile,
+             captureRequested: store.captureEnabled,
+           ),
+       _ownsStateMachine = stateMachine == null {
     _uiSubscription = _ui.stream.skip(1).listen((_) {
       if (!_disposed) notifyListeners();
     });
+    this.stateMachine.addListener(_scheduleReconciliation);
   }
 
   final ClipStore store;
   final ClipClipboardService service;
   final bool automaticCaptureSupported;
+  final AppStateMachine stateMachine;
+  final bool _ownsStateMachine;
   final ClipboardSnapshotBus _ui = ClipboardSnapshotBus();
   StreamSubscription<ClipboardUiSnapshot>? _uiSubscription;
+  Future<void> _reconciliationTail = Future<void>.value();
   bool _disposed = false;
 
   Stream<ClipboardUiSnapshot> get snapshots => _ui.stream;
@@ -34,40 +48,70 @@ class ClipboardController extends ChangeNotifier {
   bool get monitoring => snapshot.monitoring;
   bool get busy => snapshot.busy;
   String? get errorMessage => snapshot.errorMessage;
+  bool get captureRequested => stateMachine.state.captureRequested;
 
   void _publish(ClipboardUiSnapshot next) => _ui.publish(next);
 
   Future<void> initialize() async {
-    if (automaticCaptureSupported && store.captureEnabled) {
-      await _startMonitoring();
+    if (store.vaultLocked) {
+      if (stateMachine.state.captureRequested) {
+        stateMachine.dispatch(AppEvent.captureDisabled);
+      }
+      if (stateMachine.state.vault == AppVaultState.unlocked) {
+        stateMachine.dispatch(AppEvent.lockRequested);
+      }
+    } else if (!store.vaultLocked &&
+        store.captureEnabled != stateMachine.state.captureRequested) {
+      // The formal machine owns operational intent. The store persists the
+      // accepted decision; it cannot independently turn capture back on.
+      store.setCaptureEnabled(stateMachine.state.captureRequested);
     }
+    await reconcileWithState();
   }
 
   Future<void> setCaptureEnabled(bool enabled) async {
-    if (store.vaultLocked) return;
-    store.setCaptureEnabled(enabled);
-    if (!automaticCaptureSupported) {
-      return;
-    }
     if (enabled) {
-      await _startMonitoring();
+      final transition = stateMachine.state.captureRequested
+          ? stateMachine.state.capture == AppCaptureState.faulted
+                ? stateMachine.dispatch(AppEvent.captureRecovered)
+                : null
+          : stateMachine.dispatch(AppEvent.captureEnabled);
+      if (transition != null && !transition.accepted) {
+        store.setStatusMessage('Capture remains unavailable in this app state');
+        return;
+      }
+      store.setCaptureEnabled(true);
     } else {
-      await service.stop();
-      _publish(snapshot.copyWith(monitoring: false));
+      final transition = stateMachine.dispatch(AppEvent.captureDisabled);
+      if (!transition.accepted) return;
+      store.setCaptureEnabled(false);
     }
+    await reconcileWithState();
   }
 
   Future<CaptureResult> captureNow() => _run(() async {
-    final snapshot = await service.read();
-    if (snapshot == null) {
+    final authorizedRevision = _authorizedCaptureRevision();
+    if (authorizedRevision == null) {
+      store.setStatusMessage('Capture is not authorized in this app state');
+      return const CaptureResult.rejected(CaptureRejectionReason.paused);
+    }
+    final clipboardSnapshot = await service.read();
+    if (!_captureAuthorizationStillCurrent(authorizedRevision)) {
+      store.setStatusMessage(
+        'Capture was cancelled after the app state changed',
+      );
+      return const CaptureResult.rejected(CaptureRejectionReason.paused);
+    }
+    if (clipboardSnapshot == null) {
       store.setStatusMessage('No supported clipboard content found');
       return const CaptureResult.rejected(CaptureRejectionReason.empty);
     }
-    return store.capture(snapshot);
+    return store.capture(clipboardSnapshot);
   });
 
   Future<void> copy(ClipItem item, {TextTransform? transform}) =>
       _run(() async {
+        _requireLocalWork('copy');
         String? override;
         if (transform != null) {
           final text = item.text;
@@ -84,6 +128,7 @@ class ClipboardController extends ChangeNotifier {
       });
 
   Future<bool> copyNextQueued() => _run(() async {
+    _requireLocalWork('paste queue');
     final item = store.takeNextQueued();
     if (item == null) {
       store.setStatusMessage('Paste queue is empty');
@@ -95,25 +140,132 @@ class ClipboardController extends ChangeNotifier {
     return true;
   });
 
+  Future<void> reconcileWithState() {
+    final result = _reconciliationTail.then((_) => _reconcileNow());
+    _reconciliationTail = result.catchError((Object _) {});
+    return result;
+  }
+
+  void _scheduleReconciliation() {
+    if (_disposed) return;
+    unawaited(
+      reconcileWithState().catchError((Object _) {
+        if (_disposed) return;
+        _publish(
+          snapshot.copyWith(
+            monitoring: false,
+            errorMessage: 'Clipboard state reconciliation failed safely',
+          ),
+        );
+      }),
+    );
+  }
+
+  Future<void> _reconcileNow() async {
+    if (_disposed) return;
+    final state = stateMachine.state;
+    final shouldMonitor =
+        automaticCaptureSupported &&
+        state.permitsCaptureWork &&
+        (state.capture == AppCaptureState.ready ||
+            state.capture == AppCaptureState.monitoring);
+
+    if (!shouldMonitor) {
+      if (service.monitoring) await service.stop();
+      _publish(snapshot.copyWith(monitoring: false));
+      return;
+    }
+    if (service.monitoring && state.capture == AppCaptureState.monitoring) {
+      _publish(snapshot.copyWith(monitoring: true, errorMessage: null));
+      return;
+    }
+    await _startMonitoring();
+  }
+
   Future<void> _startMonitoring() async {
+    final authorizedRevision = _authorizedCaptureRevision();
+    if (authorizedRevision == null) return;
     try {
       await service.start((clipboardSnapshot) async {
+        final callbackRevision = _authorizedCaptureRevision(
+          requireMonitoring: true,
+        );
+        if (callbackRevision == null) {
+          await service.stop();
+          if (!_disposed) _publish(snapshot.copyWith(monitoring: false));
+          return;
+        }
         final result = await store.capture(clipboardSnapshot);
         if (!result.accepted &&
             result.rejectionReason == CaptureRejectionReason.vaultUnavailable) {
+          stateMachine.dispatch(AppEvent.captureFailed);
+          if (stateMachine.state.vault == AppVaultState.unlocked) {
+            stateMachine.dispatch(AppEvent.lockRequested);
+          }
           await service.stop();
-          _publish(snapshot.copyWith(monitoring: false));
+          if (!_disposed) _publish(snapshot.copyWith(monitoring: false));
+          return;
+        }
+        if (!_captureAuthorizationStillCurrent(
+          callbackRevision,
+          requireMonitoring: true,
+        )) {
+          return;
         }
       });
-      _publish(snapshot.copyWith(monitoring: true, errorMessage: null));
+      if (!_captureAuthorizationStillCurrent(authorizedRevision)) {
+        await service.stop();
+        if (!_disposed) _publish(snapshot.copyWith(monitoring: false));
+        return;
+      }
+      if (stateMachine.state.capture == AppCaptureState.ready) {
+        final transition = stateMachine.dispatch(
+          AppEvent.captureMonitoringStarted,
+        );
+        if (!transition.accepted) {
+          await service.stop();
+          if (!_disposed) _publish(snapshot.copyWith(monitoring: false));
+          return;
+        }
+      }
+      if (!_disposed) {
+        _publish(snapshot.copyWith(monitoring: true, errorMessage: null));
+      }
     } on Object {
-      store.setCaptureEnabled(false);
-      _publish(
-        snapshot.copyWith(
-          monitoring: false,
-          errorMessage: 'Automatic clipboard capture is unavailable',
-        ),
-      );
+      if (_disposed) return;
+      if (stateMachine.state.permitsCaptureWork) {
+        stateMachine.dispatch(AppEvent.captureFailed);
+      }
+      if (!_disposed) {
+        _publish(
+          snapshot.copyWith(
+            monitoring: false,
+            errorMessage: 'Automatic clipboard capture is unavailable',
+          ),
+        );
+      }
+    }
+  }
+
+  int? _authorizedCaptureRevision({bool requireMonitoring = false}) {
+    final state = stateMachine.state;
+    if (!state.permitsCaptureWork ||
+        (requireMonitoring && state.capture != AppCaptureState.monitoring)) {
+      return null;
+    }
+    return state.revision;
+  }
+
+  bool _captureAuthorizationStillCurrent(
+    int revision, {
+    bool requireMonitoring = false,
+  }) =>
+      stateMachine.state.revision == revision &&
+      _authorizedCaptureRevision(requireMonitoring: requireMonitoring) != null;
+
+  void _requireLocalWork(String operation) {
+    if (!stateMachine.state.permitsLocalWork) {
+      throw StateError('$operation is unavailable in the current app state');
     }
   }
 
@@ -139,9 +291,11 @@ class ClipboardController extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    stateMachine.removeListener(_scheduleReconciliation);
     unawaited(_uiSubscription?.cancel());
     unawaited(_ui.close());
     unawaited(service.stop());
+    if (_ownsStateMachine) stateMachine.dispose();
     super.dispose();
   }
 }

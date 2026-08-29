@@ -4,29 +4,39 @@ This directory owns the executable specification for the shared mobile and
 desktop Flutter control plane. The production transition authority is
 `lib/state/app_state_machine.dart`; native lifecycle handlers, UI status, auth,
 vault, device trust, connectivity, and sync must enter that reducer rather than
-mutating parallel booleans.
+mutating parallel booleans. Clipboard capture intent and the ready, monitoring,
+and controlled-fault effect states are part of the same authority.
 
 ## Safety properties
 
 `app_lifecycle_safety` checks that:
 
-1. unauthenticated, pending, suspended, and revoked devices cannot unlock the
-   vault or sync;
-2. sync can run only for an authenticated active device with an unlocked vault
-   and live network;
-3. mobile background execution locks and disables sync;
-4. desktop tray background execution is explicitly modeled and cannot escape
-   the same authentication/device/vault gates;
-5. expiry, suspension, shutdown, and native failure fail closed;
-6. device revocation is monotonic, destroys local vault access, and can only
-   progress toward shutdown; and
-7. window visibility agrees with the lifecycle phase.
+1. cloud sync can run only for an authenticated active device with an unlocked
+   vault and live network;
+2. signed-out local mode may use an unlocked device vault, but it cannot sync;
+3. capture requires explicit retained user intent plus every local-work guard;
+4. automatic monitoring exists only on desktop and is represented separately
+   from foreground/manual capture readiness;
+5. capture faults deny further capture until explicit recovery, while disabling
+   capture clears user intent;
+6. mobile background execution locks and disables both capture and sync;
+7. reviewed desktop tray background execution may retain vault, capture, and
+   sync state but cannot escape device/vault/authentication gates;
+8. expiry, suspension, shutdown, and native failure fail closed;
+9. device revocation is monotonic, destroys local vault access, clears capture
+   intent, and can only progress toward shutdown; and
+10. window visibility agrees with the lifecycle phase.
 
 The Dart reducer is total: every reachable abstract state is paired with every
 `AppEvent` in `test/app_state_machine_test.dart`. Invalid events produce a
 controlled rejection and preserve the previous valid state. Valid events must
 advance the state revision and satisfy all invariants. Reentrant listener
 dispatch is rejected so nested callbacks cannot interleave transitions.
+`ClipboardController` checks the granted capability before clipboard reads,
+native watcher starts, and watcher callbacks. Awaited reads and starts retain
+the granting revision and suppress stale completion when state changes. The UI
+hides loaded records and denies persistent local mutations whenever
+`local_work_allowed` is false.
 
 ## Model-to-production refinement
 
@@ -48,7 +58,9 @@ abstract transition policy and its Dart refinement. They do **not** prove
 Flutter engine, OS plugin, cryptographic-provider, network, filesystem, or
 hardware behavior. Those components remain behind explicit ports and must
 convert failures into `nativeFailure` or another reviewed event. No unbounded
-liveness or eventual sync-delivery claim is made.
+liveness or eventual sync-delivery claim is made. Revision checks prove the
+implemented command boundary, not cancellation of an OS operation after the OS
+has already performed it.
 
 ## Local checks
 

@@ -33,10 +33,17 @@ The sibling `cliptown-interfaces` checkout is required at `../cliptown-interface
 `lib/state/app_state_machine.dart` is the single transition authority for the
 shared mobile and desktop control plane. It models app lifecycle,
 authentication, local-device trust, vault availability, network availability,
-window visibility, and sync. Every event is handled by one pure total reducer:
+window visibility, clipboard-capture intent/effects, and sync. The same machine
+instance is injected into Flutter lifecycle handling, the desktop tray/window
+host, and `ClipboardController`; construction rejects split authorities. Every
+event is handled by one pure total reducer:
 valid transitions advance a monotonic revision; invalid and reentrant events
 are rejected without changing state; native failures enter a controlled,
-locked, sync-disabled fault state.
+locked, capture-disabled, sync-disabled fault state. Offline local capture is
+distinct from authenticated cloud sync, and asynchronous clipboard reads or
+watcher starts are discarded when a newer state revision invalidates them.
+When local capability is absent, loaded history is not rendered and persistent
+UI mutations are rejected through the same revision-checked gate.
 
 The product-owned Quint specification in `formal/app_lifecycle.qnt` checks the
 same safety gates. CI typechecks deterministic scenarios, explores critical

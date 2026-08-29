@@ -127,6 +127,9 @@ jobs:
               unlocked_reached \
               running_sync_reached \
               retry_backoff_reached \
+              capture_ready_reached \
+              capture_monitoring_reached \
+              capture_faulted_reached \
               mobile_background_locked_reached \
               desktop_background_unlocked_reached \
               revocation_reached \

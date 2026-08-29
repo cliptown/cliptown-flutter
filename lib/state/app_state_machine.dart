@@ -27,12 +27,21 @@ enum AppVaultState { unavailable, locked, unlocked, destroyed }
 
 enum AppSyncState { disabled, idle, running, backoff }
 
+/// Capture is a controlled effect, not an incidental controller boolean.
+/// [ready] permits an explicit foreground capture, while [monitoring] records
+/// that a reviewed desktop watcher is active. [faulted] preserves the user's
+/// intent but denies capture until an explicit recovery transition succeeds.
+enum AppCaptureState { disabled, ready, monitoring, faulted }
+
 /// Every control-plane input is represented here. The reducer below switches
 /// exhaustively over this enum, so adding an event is a compile-time change to
 /// the transition relation rather than an unreviewed callback path.
 enum AppEvent {
   bootSignedOut,
   bootAuthenticated,
+  bootLocalReadyCaptureOn,
+  bootLocalReadyCaptureOff,
+  bootVaultUnavailable,
   signInSucceeded,
   deviceApproved,
   deviceResumed,
@@ -48,6 +57,12 @@ enum AppEvent {
   syncSucceeded,
   syncFailed,
   retryRequested,
+  captureEnabled,
+  captureDisabled,
+  captureMonitoringStarted,
+  captureMonitoringStopped,
+  captureFailed,
+  captureRecovered,
   foregroundRequested,
   backgroundRequested,
   shutdownRequested,
@@ -64,6 +79,8 @@ final class AppMachineState {
     required this.localDevice,
     required this.vault,
     required this.sync,
+    required this.capture,
+    required this.captureRequested,
     required this.online,
     required this.windowVisible,
     required this.revocationObserved,
@@ -77,6 +94,8 @@ final class AppMachineState {
     localDevice: LocalDeviceTrustState.pending,
     vault: AppVaultState.unavailable,
     sync: AppSyncState.disabled,
+    capture: AppCaptureState.disabled,
+    captureRequested: false,
     online: false,
     windowVisible: false,
     revocationObserved: false,
@@ -90,11 +109,36 @@ final class AppMachineState {
     localDevice: LocalDeviceTrustState.pending,
     vault: AppVaultState.unavailable,
     sync: AppSyncState.disabled,
+    capture: AppCaptureState.disabled,
+    captureRequested: false,
     online: false,
     windowVisible: true,
     revocationObserved: false,
     revision: 1,
   );
+
+  factory AppMachineState.localReady(
+    AppRuntimeKind runtime, {
+    required bool captureRequested,
+  }) => AppMachineState(
+    runtime: runtime,
+    lifecycle: AppLifecyclePhase.foreground,
+    authentication: AppAuthenticationState.signedOut,
+    localDevice: LocalDeviceTrustState.active,
+    vault: AppVaultState.unlocked,
+    sync: AppSyncState.disabled,
+    capture: captureRequested
+        ? AppCaptureState.ready
+        : AppCaptureState.disabled,
+    captureRequested: captureRequested,
+    online: false,
+    windowVisible: true,
+    revocationObserved: false,
+    revision: 1,
+  );
+
+  factory AppMachineState.vaultUnavailable(AppRuntimeKind runtime) =>
+      AppMachineState.signedOut(runtime);
 
   final AppRuntimeKind runtime;
   final AppLifecyclePhase lifecycle;
@@ -102,6 +146,8 @@ final class AppMachineState {
   final LocalDeviceTrustState localDevice;
   final AppVaultState vault;
   final AppSyncState sync;
+  final AppCaptureState capture;
+  final bool captureRequested;
   final bool online;
   final bool windowVisible;
   final bool revocationObserved;
@@ -112,13 +158,22 @@ final class AppMachineState {
       lifecycle == AppLifecyclePhase.stopped ||
       lifecycle == AppLifecyclePhase.faulted;
 
-  bool get permitsSensitiveWork =>
-      authentication == AppAuthenticationState.authenticated &&
+  bool get permitsLocalWork =>
       localDevice == LocalDeviceTrustState.active &&
       vault == AppVaultState.unlocked &&
       (lifecycle == AppLifecyclePhase.foreground ||
           (runtime == AppRuntimeKind.desktop &&
               lifecycle == AppLifecyclePhase.background));
+
+  bool get permitsSensitiveWork =>
+      authentication == AppAuthenticationState.authenticated &&
+      permitsLocalWork;
+
+  bool get permitsCaptureWork =>
+      permitsLocalWork &&
+      captureRequested &&
+      (capture == AppCaptureState.ready ||
+          capture == AppCaptureState.monitoring);
 
   AppMachineState copyWith({
     AppRuntimeKind? runtime,
@@ -127,6 +182,8 @@ final class AppMachineState {
     LocalDeviceTrustState? localDevice,
     AppVaultState? vault,
     AppSyncState? sync,
+    AppCaptureState? capture,
+    bool? captureRequested,
     bool? online,
     bool? windowVisible,
     bool? revocationObserved,
@@ -138,6 +195,8 @@ final class AppMachineState {
     localDevice: localDevice ?? this.localDevice,
     vault: vault ?? this.vault,
     sync: sync ?? this.sync,
+    capture: capture ?? this.capture,
+    captureRequested: captureRequested ?? this.captureRequested,
     online: online ?? this.online,
     windowVisible: windowVisible ?? this.windowVisible,
     revocationObserved: revocationObserved ?? this.revocationObserved,
@@ -159,13 +218,23 @@ final class AppMachineState {
     }
 
     if (authentication != AppAuthenticationState.authenticated &&
-        (vault == AppVaultState.unlocked || sync != AppSyncState.disabled)) {
-      violations.add('unauthenticated sessions are locked and sync-disabled');
+        sync != AppSyncState.disabled) {
+      violations.add('unauthenticated sessions are sync-disabled');
+    }
+
+    if ((authentication == AppAuthenticationState.reauthenticationRequired ||
+            authentication == AppAuthenticationState.revoked) &&
+        vault == AppVaultState.unlocked) {
+      violations.add('expired or revoked sessions cannot keep the vault open');
     }
 
     if (localDevice != LocalDeviceTrustState.active &&
-        (vault == AppVaultState.unlocked || sync != AppSyncState.disabled)) {
-      violations.add('untrusted local devices are locked and sync-disabled');
+        (vault == AppVaultState.unlocked ||
+            sync != AppSyncState.disabled ||
+            capture != AppCaptureState.disabled)) {
+      violations.add(
+        'untrusted local devices are locked with sync and capture disabled',
+      );
     }
 
     if (vault != AppVaultState.unlocked && sync != AppSyncState.disabled) {
@@ -176,10 +245,29 @@ final class AppMachineState {
       violations.add('running sync requires every sensitive-work guard');
     }
 
+    if (!captureRequested && capture != AppCaptureState.disabled) {
+      violations.add('capture without user intent is disabled');
+    }
+
+    if (capture != AppCaptureState.disabled && !permitsLocalWork) {
+      violations.add(
+        'active or faulted capture requires every local-work guard',
+      );
+    }
+
+    if (capture == AppCaptureState.monitoring &&
+        runtime != AppRuntimeKind.desktop) {
+      violations.add('automatic clipboard monitoring is desktop-only');
+    }
+
     if (runtime == AppRuntimeKind.mobile &&
         lifecycle == AppLifecyclePhase.background &&
-        (vault == AppVaultState.unlocked || sync != AppSyncState.disabled)) {
-      violations.add('mobile background state is locked and sync-disabled');
+        (vault == AppVaultState.unlocked ||
+            sync != AppSyncState.disabled ||
+            capture != AppCaptureState.disabled)) {
+      violations.add(
+        'mobile background state is locked with sync and capture disabled',
+      );
     }
 
     if ({
@@ -188,7 +276,9 @@ final class AppMachineState {
           AppLifecyclePhase.stopped,
           AppLifecyclePhase.faulted,
         }.contains(lifecycle) &&
-        (vault == AppVaultState.unlocked || sync != AppSyncState.disabled)) {
+        (vault == AppVaultState.unlocked ||
+            sync != AppSyncState.disabled ||
+            capture != AppCaptureState.disabled)) {
       violations.add('non-operational lifecycle states fail closed');
     }
 
@@ -196,9 +286,11 @@ final class AppMachineState {
       if (authentication != AppAuthenticationState.revoked ||
           vault != AppVaultState.destroyed ||
           sync != AppSyncState.disabled ||
+          capture != AppCaptureState.disabled ||
+          captureRequested ||
           !revocationObserved) {
         violations.add(
-          'revoked devices have revoked auth, destroyed keys, and disabled sync',
+          'revoked devices have revoked auth, destroyed keys, and disabled capture and sync',
         );
       }
     } else if (revocationObserved) {
@@ -222,6 +314,8 @@ final class AppMachineState {
     'local_device': localDevice.index,
     'vault': vault.index,
     'sync': sync.index,
+    'capture': capture.index,
+    'capture_requested': captureRequested,
     'online': online,
     'window_visible': windowVisible,
     'revocation_observed': revocationObserved,
@@ -324,6 +418,8 @@ abstract final class AppTransitionSystem {
                   localDevice: LocalDeviceTrustState.pending,
                   vault: AppVaultState.unavailable,
                   sync: AppSyncState.disabled,
+                  capture: AppCaptureState.disabled,
+                  captureRequested: false,
                   windowVisible: true,
                 ),
               ),
@@ -337,6 +433,40 @@ abstract final class AppTransitionSystem {
                   localDevice: LocalDeviceTrustState.active,
                   vault: AppVaultState.locked,
                   sync: AppSyncState.disabled,
+                  capture: AppCaptureState.disabled,
+                  captureRequested: false,
+                  windowVisible: true,
+                ),
+              ),
+      AppEvent.bootLocalReadyCaptureOn || AppEvent.bootLocalReadyCaptureOff =>
+        state.lifecycle != AppLifecyclePhase.starting
+            ? reject('local boot completion requires starting state')
+            : accept(
+                state.copyWith(
+                  lifecycle: AppLifecyclePhase.foreground,
+                  authentication: AppAuthenticationState.signedOut,
+                  localDevice: LocalDeviceTrustState.active,
+                  vault: AppVaultState.unlocked,
+                  sync: AppSyncState.disabled,
+                  capture: event == AppEvent.bootLocalReadyCaptureOn
+                      ? AppCaptureState.ready
+                      : AppCaptureState.disabled,
+                  captureRequested: event == AppEvent.bootLocalReadyCaptureOn,
+                  windowVisible: true,
+                ),
+              ),
+      AppEvent.bootVaultUnavailable =>
+        state.lifecycle != AppLifecyclePhase.starting
+            ? reject('vault-unavailable boot requires starting state')
+            : accept(
+                state.copyWith(
+                  lifecycle: AppLifecyclePhase.foreground,
+                  authentication: AppAuthenticationState.signedOut,
+                  localDevice: LocalDeviceTrustState.pending,
+                  vault: AppVaultState.unavailable,
+                  sync: AppSyncState.disabled,
+                  capture: AppCaptureState.disabled,
+                  captureRequested: false,
                   windowVisible: true,
                 ),
               ),
@@ -350,8 +480,14 @@ abstract final class AppTransitionSystem {
             : accept(
                 state.copyWith(
                   authentication: AppAuthenticationState.authenticated,
-                  vault: AppVaultState.locked,
-                  sync: AppSyncState.disabled,
+                  vault: state.localDevice == LocalDeviceTrustState.active
+                      ? state.vault
+                      : AppVaultState.locked,
+                  sync:
+                      state.localDevice == LocalDeviceTrustState.active &&
+                          state.vault == AppVaultState.unlocked
+                      ? AppSyncState.idle
+                      : AppSyncState.disabled,
                 ),
               ),
       AppEvent.deviceApproved =>
@@ -364,6 +500,7 @@ abstract final class AppTransitionSystem {
                   localDevice: LocalDeviceTrustState.active,
                   vault: AppVaultState.locked,
                   sync: AppSyncState.disabled,
+                  capture: AppCaptureState.disabled,
                 ),
               ),
       AppEvent.deviceResumed =>
@@ -376,11 +513,13 @@ abstract final class AppTransitionSystem {
                   localDevice: LocalDeviceTrustState.active,
                   vault: AppVaultState.locked,
                   sync: AppSyncState.disabled,
+                  capture: AppCaptureState.disabled,
                 ),
               ),
       AppEvent.unlockSucceeded =>
         !isOperationalLifecycle() ||
-                state.authentication != AppAuthenticationState.authenticated ||
+                (state.authentication != AppAuthenticationState.authenticated &&
+                    state.authentication != AppAuthenticationState.signedOut) ||
                 state.localDevice != LocalDeviceTrustState.active ||
                 state.vault != AppVaultState.locked ||
                 (state.runtime == AppRuntimeKind.mobile &&
@@ -389,7 +528,14 @@ abstract final class AppTransitionSystem {
             : accept(
                 state.copyWith(
                   vault: AppVaultState.unlocked,
-                  sync: AppSyncState.idle,
+                  sync:
+                      state.authentication ==
+                          AppAuthenticationState.authenticated
+                      ? AppSyncState.idle
+                      : AppSyncState.disabled,
+                  capture: state.captureRequested
+                      ? AppCaptureState.ready
+                      : AppCaptureState.disabled,
                 ),
               ),
       AppEvent.lockRequested =>
@@ -399,6 +545,7 @@ abstract final class AppTransitionSystem {
                 state.copyWith(
                   vault: AppVaultState.locked,
                   sync: AppSyncState.disabled,
+                  capture: AppCaptureState.disabled,
                 ),
               ),
       AppEvent.authenticationExpired =>
@@ -412,6 +559,7 @@ abstract final class AppTransitionSystem {
                       AppAuthenticationState.reauthenticationRequired,
                   vault: lockedVault(),
                   sync: AppSyncState.disabled,
+                  capture: AppCaptureState.disabled,
                 ),
               ),
       AppEvent.signOutRequested =>
@@ -422,7 +570,6 @@ abstract final class AppTransitionSystem {
             : accept(
                 state.copyWith(
                   authentication: AppAuthenticationState.signedOut,
-                  vault: lockedVault(),
                   sync: AppSyncState.disabled,
                 ),
               ),
@@ -437,6 +584,7 @@ abstract final class AppTransitionSystem {
                   localDevice: LocalDeviceTrustState.suspended,
                   vault: lockedVault(),
                   sync: AppSyncState.disabled,
+                  capture: AppCaptureState.disabled,
                 ),
               ),
       AppEvent.deviceRevoked =>
@@ -449,6 +597,8 @@ abstract final class AppTransitionSystem {
                   localDevice: LocalDeviceTrustState.revoked,
                   vault: AppVaultState.destroyed,
                   sync: AppSyncState.disabled,
+                  capture: AppCaptureState.disabled,
+                  captureRequested: false,
                   revocationObserved: true,
                 ),
               ),
@@ -492,6 +642,48 @@ abstract final class AppTransitionSystem {
                 state.sync != AppSyncState.backoff
             ? reject('retry requires unlocked, trusted, online backoff state')
             : accept(state.copyWith(sync: AppSyncState.running)),
+      AppEvent.captureEnabled =>
+        state.captureRequested ||
+                state.capture != AppCaptureState.disabled ||
+                !state.permitsLocalWork
+            ? reject(
+                'capture enable requires available local work and no intent',
+              )
+            : accept(
+                state.copyWith(
+                  captureRequested: true,
+                  capture: AppCaptureState.ready,
+                ),
+              ),
+      AppEvent.captureDisabled =>
+        !state.captureRequested
+            ? reject('capture is already disabled')
+            : accept(
+                state.copyWith(
+                  captureRequested: false,
+                  capture: AppCaptureState.disabled,
+                ),
+              ),
+      AppEvent.captureMonitoringStarted =>
+        state.runtime != AppRuntimeKind.desktop ||
+                state.capture != AppCaptureState.ready ||
+                !state.permitsCaptureWork
+            ? reject('monitoring requires a capture-ready desktop state')
+            : accept(state.copyWith(capture: AppCaptureState.monitoring)),
+      AppEvent.captureMonitoringStopped =>
+        state.capture != AppCaptureState.monitoring
+            ? reject('monitoring stop requires active monitoring')
+            : accept(state.copyWith(capture: AppCaptureState.ready)),
+      AppEvent.captureFailed =>
+        (state.capture != AppCaptureState.ready &&
+                    state.capture != AppCaptureState.monitoring) ||
+                !state.permitsCaptureWork
+            ? reject('capture failure requires an authorized capture state')
+            : accept(state.copyWith(capture: AppCaptureState.faulted)),
+      AppEvent.captureRecovered =>
+        state.capture != AppCaptureState.faulted || !state.permitsLocalWork
+            ? reject('capture recovery requires a live controlled fault')
+            : accept(state.copyWith(capture: AppCaptureState.ready)),
       AppEvent.foregroundRequested =>
         (state.lifecycle != AppLifecyclePhase.foreground &&
                 state.lifecycle != AppLifecyclePhase.background)
@@ -516,6 +708,9 @@ abstract final class AppTransitionSystem {
                   sync: state.runtime == AppRuntimeKind.mobile
                       ? AppSyncState.disabled
                       : state.sync,
+                  capture: state.runtime == AppRuntimeKind.mobile
+                      ? AppCaptureState.disabled
+                      : state.capture,
                 ),
               ),
       AppEvent.shutdownRequested =>
@@ -532,6 +727,7 @@ abstract final class AppTransitionSystem {
                   windowVisible: false,
                   vault: lockedVault(),
                   sync: AppSyncState.disabled,
+                  capture: AppCaptureState.disabled,
                 ),
               ),
       AppEvent.shutdownCompleted =>
@@ -543,6 +739,7 @@ abstract final class AppTransitionSystem {
                   windowVisible: false,
                   vault: lockedVault(),
                   sync: AppSyncState.disabled,
+                  capture: AppCaptureState.disabled,
                 ),
               ),
       AppEvent.nativeFailure =>
@@ -559,6 +756,7 @@ abstract final class AppTransitionSystem {
                   windowVisible: false,
                   vault: lockedVault(),
                   sync: AppSyncState.disabled,
+                  capture: AppCaptureState.disabled,
                 ),
               ),
     };
@@ -585,6 +783,19 @@ final class AppStateMachine extends ChangeNotifier {
   factory AppStateMachine.signedOut(AppRuntimeKind runtime) =>
       AppStateMachine(initialState: AppMachineState.signedOut(runtime));
 
+  factory AppStateMachine.localReady(
+    AppRuntimeKind runtime, {
+    required bool captureRequested,
+  }) => AppStateMachine(
+    initialState: AppMachineState.localReady(
+      runtime,
+      captureRequested: captureRequested,
+    ),
+  );
+
+  factory AppStateMachine.vaultUnavailable(AppRuntimeKind runtime) =>
+      AppStateMachine(initialState: AppMachineState.vaultUnavailable(runtime));
+
   AppMachineState _state;
   AppTransition? _lastTransition;
   bool _dispatching = false;
@@ -594,16 +805,17 @@ final class AppStateMachine extends ChangeNotifier {
 
   String get statusLabel {
     if (_state.lifecycle == AppLifecyclePhase.faulted) {
-      return 'Controlled fault • vault locked • sync disabled';
+      return 'Controlled fault • vault locked • capture and sync disabled';
     }
+    final capture = 'capture ${_state.capture.name}';
     return switch (_state.authentication) {
       AppAuthenticationState.signedOut =>
-        'Signed out • vault ${_state.vault.name} • sync disabled',
+        'Local mode • vault ${_state.vault.name} • $capture • sync disabled',
       AppAuthenticationState.reauthenticationRequired =>
-        'Reauthentication required • vault ${_state.vault.name} • sync disabled',
+        'Reauthentication required • vault ${_state.vault.name} • $capture • sync disabled',
       AppAuthenticationState.revoked => 'Device revoked • local keys destroyed',
       AppAuthenticationState.authenticated =>
-        '${_state.lifecycle.name} • vault ${_state.vault.name} • sync ${_state.sync.name}',
+        '${_state.lifecycle.name} • vault ${_state.vault.name} • $capture • sync ${_state.sync.name}',
     };
   }
 

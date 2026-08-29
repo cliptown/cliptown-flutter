@@ -25,7 +25,12 @@ Future<void> main() async {
 
   final isDesktop = Platform.isMacOS || Platform.isWindows || Platform.isLinux;
   final runtime = isDesktop ? AppRuntimeKind.desktop : AppRuntimeKind.mobile;
-  final stateMachine = AppStateMachine.signedOut(runtime);
+  final stateMachine = store.vaultLocked
+      ? AppStateMachine.vaultUnavailable(runtime)
+      : AppStateMachine.localReady(
+          runtime,
+          captureRequested: store.captureEnabled,
+        );
 
   var desktopBackgroundEnabled = false;
   var desktopHotKeyEnabled = false;
@@ -40,6 +45,7 @@ Future<void> main() async {
     store: store,
     service: SystemClipClipboardService(),
     automaticCaptureSupported: isDesktop,
+    stateMachine: stateMachine,
   );
   await clipboardController.initialize();
 

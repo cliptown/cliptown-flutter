@@ -47,7 +47,7 @@ void main() {
       findsOneWidget,
     );
     expect(
-      find.text('Signed out • vault unavailable • sync disabled'),
+      find.text('Local mode • vault unlocked • capture ready • sync disabled'),
       findsOneWidget,
     );
   });
@@ -66,7 +66,7 @@ void main() {
     await tester.pump();
 
     expect(
-      find.text('foreground • vault unlocked • sync idle'),
+      find.text('foreground • vault unlocked • capture disabled • sync idle'),
       findsOneWidget,
     );
   });
@@ -94,10 +94,61 @@ void main() {
     expect(stateMachine.state.sync, AppSyncState.disabled);
     expect(stateMachine.state.invariantViolations(), isEmpty);
     expect(
-      find.text('background • vault locked • sync disabled'),
+      find.text('background • vault locked • capture disabled • sync disabled'),
       findsOneWidget,
     );
   });
+
+  testWidgets(
+    'locked foreground hides loaded history and disables local writes',
+    (tester) async {
+      final store = await createDemoStore();
+      final stateMachine = AppStateMachine.localReady(
+        AppRuntimeKind.mobile,
+        captureRequested: true,
+      );
+      final controller = ClipboardController(
+        store: store,
+        service: MemoryClipClipboardService(),
+        stateMachine: stateMachine,
+      );
+      addTearDown(stateMachine.dispose);
+      addTearDown(controller.dispose);
+      await tester.pumpWidget(
+        ClipTownApp(
+          store: store,
+          stateMachine: stateMachine,
+          clipboardController: controller,
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Deploy command'), findsOneWidget);
+
+      expect(
+        stateMachine.dispatch(AppEvent.backgroundRequested).accepted,
+        isTrue,
+      );
+      expect(
+        stateMachine.dispatch(AppEvent.foregroundRequested).accepted,
+        isTrue,
+      );
+      await tester.pumpAndSettle();
+
+      expect(stateMachine.state.lifecycle, AppLifecyclePhase.foreground);
+      expect(stateMachine.state.vault, AppVaultState.locked);
+      expect(find.text('Deploy command'), findsNothing);
+      expect(
+        find.text(
+          'Encrypted history is locked. ClipTown refuses to capture or fall back to plaintext.',
+        ),
+        findsOneWidget,
+      );
+      final addButton = tester.widget<FloatingActionButton>(
+        find.byKey(const Key('add-manual-clip')),
+      );
+      expect(addButton.onPressed, isNull);
+    },
+  );
 
   testWidgets('desktop Flutter lifecycle does not bypass tray authority', (
     tester,
@@ -114,6 +165,32 @@ void main() {
 
     expect(stateMachine.state, same(before));
     expect(stateMachine.state.invariantViolations(), isEmpty);
+  });
+
+  testWidgets('split clipboard and app transition authorities are rejected', (
+    tester,
+  ) async {
+    final store = await createDemoStore();
+    final appMachine = AppStateMachine.localReady(
+      AppRuntimeKind.mobile,
+      captureRequested: true,
+    );
+    final controller = ClipboardController(
+      store: store,
+      service: MemoryClipClipboardService(),
+    );
+    addTearDown(appMachine.dispose);
+    addTearDown(controller.dispose);
+
+    await tester.pumpWidget(
+      ClipTownApp(
+        store: store,
+        stateMachine: appMachine,
+        clipboardController: controller,
+      ),
+    );
+
+    expect(tester.takeException(), isA<StateError>());
   });
 
   testWidgets('pin, queue, and copy actions update real controller state', (

@@ -12,6 +12,7 @@ module app_lifecycle_test {
         s.lifecycle == LIFECYCLE_BACKGROUND,
         s.vault == VAULT_LOCKED,
         s.sync == SYNC_DISABLED,
+        s.capture == CAPTURE_DISABLED,
         not(s.window_visible),
         app_lifecycle_safety,
       })
@@ -41,6 +42,50 @@ module app_lifecycle_test {
       .then(sync_requested)
       .fail()
 
+  run offlineLocalModeCanCaptureButCannotSyncTest =
+    init_mobile
+      .then(boot_local_ready_capture_on)
+      .then(sync_requested)
+      .fail()
+
+  run mobileBackgroundStopsCaptureTest =
+    init_mobile
+      .then(boot_local_ready_capture_on)
+      .then(background_requested)
+      .expect(and {
+        s.lifecycle == LIFECYCLE_BACKGROUND,
+        s.vault == VAULT_LOCKED,
+        s.capture_requested,
+        s.capture == CAPTURE_DISABLED,
+        app_lifecycle_safety,
+      })
+
+  run desktopMonitoringSurvivesReviewedTrayBackgroundTest =
+    init_desktop
+      .then(boot_local_ready_capture_on)
+      .then(capture_monitoring_started)
+      .then(background_requested)
+      .expect(and {
+        s.lifecycle == LIFECYCLE_BACKGROUND,
+        s.vault == VAULT_UNLOCKED,
+        s.capture == CAPTURE_MONITORING,
+        capture_monitoring_reached,
+        app_lifecycle_safety,
+      })
+
+  run captureFaultRequiresExplicitRecoveryTest =
+    init_desktop
+      .then(boot_local_ready_capture_on)
+      .then(capture_monitoring_started)
+      .then(capture_failed)
+      .then(capture_recovered)
+      .expect(and {
+        s.capture_requested,
+        s.capture == CAPTURE_READY,
+        capture_ready_reached,
+        app_lifecycle_safety,
+      })
+
   run authenticationExpiryFailsClosedTest =
     init_desktop
       .then(boot_authenticated)
@@ -52,6 +97,7 @@ module app_lifecycle_test {
         s.authentication == AUTH_REAUTHENTICATION_REQUIRED,
         s.vault == VAULT_LOCKED,
         s.sync == SYNC_DISABLED,
+        s.capture == CAPTURE_DISABLED,
         app_lifecycle_safety,
       })
 
@@ -101,6 +147,8 @@ module app_lifecycle_test {
         s.authentication == AUTH_REVOKED,
         s.vault == VAULT_DESTROYED,
         s.lifecycle == LIFECYCLE_STOPPED,
+        not(s.capture_requested),
+        s.capture == CAPTURE_DISABLED,
         app_lifecycle_safety,
       })
 
@@ -115,6 +163,7 @@ module app_lifecycle_test {
         s.lifecycle == LIFECYCLE_FAULTED,
         s.vault == VAULT_LOCKED,
         s.sync == SYNC_DISABLED,
+        s.capture == CAPTURE_DISABLED,
         not(s.window_visible),
         controlled_fault_reached,
         app_lifecycle_safety,
@@ -131,6 +180,7 @@ module app_lifecycle_test {
         s.lifecycle == LIFECYCLE_STOPPED,
         s.vault == VAULT_LOCKED,
         s.sync == SYNC_DISABLED,
+        s.capture == CAPTURE_DISABLED,
         app_lifecycle_safety,
       })
 }

@@ -42,19 +42,71 @@ class _ClipTownAppState extends State<ClipTownApp> with WidgetsBindingObserver {
   late final ClipStore store = widget.store ?? ClipStore();
   late final bool ownsStore = widget.store == null;
   late final AppStateMachine stateMachine =
-      widget.stateMachine ?? AppStateMachine.signedOut(widget.runtimeKind);
+      widget.stateMachine ??
+      widget.clipboardController?.stateMachine ??
+      widget.desktopLifecycleHost?.controller.stateMachine ??
+      _newStateMachine();
   late final bool ownsStateMachine =
-      widget.stateMachine == null || widget.disposeStateMachine;
+      (widget.stateMachine == null &&
+          widget.clipboardController == null &&
+          widget.desktopLifecycleHost == null) ||
+      (widget.stateMachine != null && widget.disposeStateMachine);
   late final ClipboardController clipboardController =
       widget.clipboardController ??
-      ClipboardController(store: store, service: MemoryClipClipboardService());
+      ClipboardController(
+        store: store,
+        service: MemoryClipClipboardService(),
+        stateMachine: stateMachine,
+      );
   late final bool ownsClipboardController = widget.clipboardController == null;
+
+  AppStateMachine _newStateMachine() {
+    if (!store.initialized) return AppStateMachine.initial(widget.runtimeKind);
+    return store.vaultLocked
+        ? AppStateMachine.vaultUnavailable(widget.runtimeKind)
+        : AppStateMachine.localReady(
+            widget.runtimeKind,
+            captureRequested: store.captureEnabled,
+          );
+  }
 
   @override
   void initState() {
     super.initState();
+    _validateSingleTransitionAuthority();
     WidgetsBinding.instance.addObserver(this);
-    if (!store.initialized) unawaited(store.initialize());
+    unawaited(_initialize());
+  }
+
+  void _validateSingleTransitionAuthority() {
+    final suppliedAuthorities = <AppStateMachine?>[
+      widget.stateMachine,
+      widget.clipboardController?.stateMachine,
+      widget.desktopLifecycleHost?.controller.stateMachine,
+    ].whereType<AppStateMachine>();
+    if (suppliedAuthorities.any((authority) => authority != stateMachine)) {
+      throw StateError(
+        'ClipTown requires one shared app state machine for UI, clipboard, and desktop lifecycle effects',
+      );
+    }
+  }
+
+  Future<void> _initialize() async {
+    if (!store.initialized) await store.initialize();
+    if (!mounted) return;
+    if (widget.stateMachine == null &&
+        widget.clipboardController == null &&
+        widget.desktopLifecycleHost == null &&
+        stateMachine.state.lifecycle == AppLifecyclePhase.starting) {
+      stateMachine.dispatch(
+        store.vaultLocked
+            ? AppEvent.bootVaultUnavailable
+            : store.captureEnabled
+            ? AppEvent.bootLocalReadyCaptureOn
+            : AppEvent.bootLocalReadyCaptureOff,
+      );
+    }
+    await clipboardController.initialize();
   }
 
   @override
@@ -69,8 +121,8 @@ class _ClipTownAppState extends State<ClipTownApp> with WidgetsBindingObserver {
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    if (ownsStateMachine) stateMachine.dispose();
     if (ownsClipboardController) clipboardController.dispose();
+    if (ownsStateMachine) stateMachine.dispose();
     if (ownsStore) store.dispose();
     unawaited(widget.desktopLifecycleHost?.dispose());
     super.dispose();
@@ -185,32 +237,44 @@ class _ClipTownHomeState extends State<ClipTownHome> {
                     store,
                     stateMachine,
                   ]),
-                  builder: (context, _) => Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: <Widget>[
-                      Text(
-                        _desktopStatus,
-                        key: const Key('desktop-background-status'),
-                        style: Theme.of(context).textTheme.labelMedium,
-                      ),
-                      Text(
-                        stateMachine.statusLabel,
-                        key: const Key('formal-state-status'),
-                        style: Theme.of(context).textTheme.labelSmall,
-                      ),
-                    ],
+                  builder: (context, _) => ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 440),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: <Widget>[
+                        Text(
+                          _desktopStatus,
+                          key: const Key('desktop-background-status'),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.labelMedium,
+                        ),
+                        Text(
+                          stateMachine.statusLabel,
+                          key: const Key('formal-state-status'),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.labelSmall,
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),
             ),
         ],
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        key: const Key('add-manual-clip'),
-        onPressed: _addManualClip,
-        icon: const Icon(Icons.add),
-        label: const Text('New clip'),
+      floatingActionButton: ListenableBuilder(
+        listenable: stateMachine,
+        builder: (context, _) => FloatingActionButton.extended(
+          key: const Key('add-manual-clip'),
+          onPressed: stateMachine.state.permitsLocalWork
+              ? _addManualClip
+              : null,
+          icon: const Icon(Icons.add),
+          label: const Text('New clip'),
+        ),
       ),
       body: SafeArea(
         child: Center(
@@ -222,6 +286,7 @@ class _ClipTownHomeState extends State<ClipTownHome> {
                 listenable: Listenable.merge(<Listenable>[
                   store,
                   clipboardController,
+                  stateMachine,
                 ]),
                 builder: (context, _) => _buildBody(context),
               ),
@@ -233,7 +298,8 @@ class _ClipTownHomeState extends State<ClipTownHome> {
   }
 
   Widget _buildBody(BuildContext context) {
-    final clips = store.visibleClips;
+    final localWorkAllowed = stateMachine.state.permitsLocalWork;
+    final clips = localWorkAllowed ? store.visibleClips : const <ClipItem>[];
     final header = Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
@@ -243,7 +309,7 @@ class _ClipTownHomeState extends State<ClipTownHome> {
         ),
         const SizedBox(height: 6),
         Text(
-          store.vaultLocked
+          !localWorkAllowed
               ? 'Encrypted history is locked. ClipTown refuses to capture or fall back to plaintext.'
               : 'History is encrypted locally. Likely secrets are skipped by default, and cloud sync remains off until reviewed key management is connected.',
           key: const Key('security-boundary-copy'),
@@ -254,11 +320,11 @@ class _ClipTownHomeState extends State<ClipTownHome> {
           message:
               clipboardController.errorMessage ??
               store.statusMessage ??
-              (store.captureEnabled
+              (stateMachine.state.permitsCaptureWork
                   ? 'Capture ready'
                   : 'Capture paused — existing history remains searchable'),
           isError:
-              store.vaultLocked || clipboardController.errorMessage != null,
+              !localWorkAllowed || clipboardController.errorMessage != null,
         ),
         const SizedBox(height: 12),
         _buildSearchAndCapture(),
@@ -293,8 +359,10 @@ class _ClipTownHomeState extends State<ClipTownHome> {
                   clip: clip,
                   queued: store.queuedIds.contains(clip.id),
                   onCopy: () => _run(() => clipboardController.copy(clip)),
-                  onToggleQueued: () => store.toggleQueued(clip.id),
-                  onTogglePinned: () => _run(() => store.togglePinned(clip.id)),
+                  onToggleQueued: () =>
+                      _runLocal(() => store.toggleQueued(clip.id)),
+                  onTogglePinned: () =>
+                      _runLocal(() => store.togglePinned(clip.id)),
                   onAction: (action) => _handleClipAction(clip, action),
                 );
               }, childCount: clips.length * 2 - 1),
@@ -318,7 +386,8 @@ class _ClipTownHomeState extends State<ClipTownHome> {
         );
         final capture = FilledButton.icon(
           key: const Key('capture-now'),
-          onPressed: clipboardController.busy || store.vaultLocked
+          onPressed:
+              clipboardController.busy || !stateMachine.state.permitsCaptureWork
               ? null
               : () => _run(clipboardController.captureNow),
           icon: const Icon(Icons.content_paste_go),
@@ -393,13 +462,17 @@ class _ClipTownHomeState extends State<ClipTownHome> {
         const SizedBox(width: 4),
         Switch(
           key: const Key('capture-toggle'),
-          value: store.captureEnabled,
-          onChanged: store.vaultLocked
+          value: stateMachine.state.captureRequested,
+          onChanged:
+              !stateMachine.state.permitsLocalWork &&
+                  !stateMachine.state.captureRequested
               ? null
               : (value) =>
                     _run(() => clipboardController.setCaptureEnabled(value)),
         ),
-        Text(store.captureEnabled ? 'Capture on' : 'Capture off'),
+        Text(
+          stateMachine.state.captureRequested ? 'Capture on' : 'Capture off',
+        ),
       ],
     );
   }
@@ -431,11 +504,13 @@ class _ClipTownHomeState extends State<ClipTownHome> {
   }
 
   String get _desktopStatus {
-    if (store.vaultLocked) return 'Vault locked • capture off';
+    if (!stateMachine.state.permitsLocalWork) {
+      return 'Vault ${stateMachine.state.vault.name} • capture off';
+    }
     final pieces = <String>[
       widget.desktopBackgroundEnabled ? 'Tray active' : 'Foreground mode',
       if (widget.desktopHotKeyEnabled) '⌘/Ctrl+Shift+V ready',
-      store.captureEnabled ? 'capture on' : 'capture paused',
+      stateMachine.state.captureRequested ? 'capture on' : 'capture paused',
     ];
     return pieces.join(' • ');
   }
@@ -447,7 +522,7 @@ class _ClipTownHomeState extends State<ClipTownHome> {
       case _ClipAction.collection:
         await _assignCollection(clip);
       case _ClipAction.delete:
-        await _run(() => store.delete(clip.id));
+        await _runLocal(() => store.delete(clip.id));
       case _ClipAction.plainText:
         await _run(
           () => clipboardController.copy(
@@ -524,7 +599,7 @@ class _ClipTownHomeState extends State<ClipTownHome> {
       ),
     );
     if (text != null && text.trim().isNotEmpty) {
-      await _run(() => store.addText(text));
+      await _runLocal(() => store.addText(text));
     }
   }
 
@@ -553,7 +628,7 @@ class _ClipTownHomeState extends State<ClipTownHome> {
         ],
       ),
     );
-    if (title != null) await _run(() => store.rename(clip.id, title));
+    if (title != null) await _runLocal(() => store.rename(clip.id, title));
   }
 
   Future<void> _assignCollection(ClipItem clip) async {
@@ -586,7 +661,7 @@ class _ClipTownHomeState extends State<ClipTownHome> {
       ),
     );
     if (collection != null) {
-      await _run(() => store.setCollection(clip.id, collection));
+      await _runLocal(() => store.setCollection(clip.id, collection));
     }
   }
 
@@ -676,20 +751,38 @@ class _ClipTownHomeState extends State<ClipTownHome> {
     );
     if (result == null) return;
     if (result.clearUnpinned) {
-      await _run(store.clearUnpinned);
+      await _runLocal(store.clearUnpinned);
       return;
     }
-    store.setCaptureLikelySensitive(result.captureSensitive ?? false);
-    store.setIgnoredApplications(
-      (result.ignoredApplications ?? '')
-          .split(',')
-          .map((value) => value.trim())
-          .where((value) => value.isNotEmpty)
-          .toSet(),
-    );
-    if (result.historyLimit case final historyLimit?) {
-      await _run(() => store.setHistoryLimit(historyLimit));
+    await _runLocal(() async {
+      store.setCaptureLikelySensitive(result.captureSensitive ?? false);
+      store.setIgnoredApplications(
+        (result.ignoredApplications ?? '')
+            .split(',')
+            .map((value) => value.trim())
+            .where((value) => value.isNotEmpty)
+            .toSet(),
+      );
+      if (result.historyLimit case final historyLimit?) {
+        await store.setHistoryLimit(historyLimit);
+      }
+      return null;
+    });
+  }
+
+  Future<void> _runLocal(FutureOr<Object?> Function() action) async {
+    final authorizedRevision = stateMachine.state.revision;
+    if (!stateMachine.state.permitsLocalWork) {
+      store.setStatusMessage('Local history is locked in this app state');
+      return;
     }
+    await _run(() {
+      if (stateMachine.state.revision != authorizedRevision ||
+          !stateMachine.state.permitsLocalWork) {
+        throw StateError('stale local operation authorization');
+      }
+      return action();
+    });
   }
 
   Future<void> _run(FutureOr<Object?> Function() action) async {
