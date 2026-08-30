@@ -50,7 +50,7 @@ class ClipboardController extends ChangeNotifier {
   String? get errorMessage => snapshot.errorMessage;
   bool get captureRequested => stateMachine.state.captureRequested;
 
-  void _publish(ClipboardUiSnapshot next) => _ui.publish(next);
+  void _dispatchUi(ClipboardUiEvent event) => _ui.dispatch(event);
 
   Future<void> initialize() async {
     if (store.vaultLocked) {
@@ -151,10 +151,10 @@ class ClipboardController extends ChangeNotifier {
     unawaited(
       reconcileWithState().catchError((Object _) {
         if (_disposed) return;
-        _publish(
-          snapshot.copyWith(
-            monitoring: false,
-            errorMessage: 'Clipboard state reconciliation failed safely',
+        _dispatchUi(
+          const ClipboardUiFailed(
+            'Clipboard state reconciliation failed safely',
+            stopMonitoring: true,
           ),
         );
       }),
@@ -172,11 +172,11 @@ class ClipboardController extends ChangeNotifier {
 
     if (!shouldMonitor) {
       if (service.monitoring) await service.stop();
-      _publish(snapshot.copyWith(monitoring: false));
+      _dispatchUi(const ClipboardMonitoringChanged(false));
       return;
     }
     if (service.monitoring && state.capture == AppCaptureState.monitoring) {
-      _publish(snapshot.copyWith(monitoring: true, errorMessage: null));
+      _dispatchUi(const ClipboardMonitoringChanged(true, clearFailure: true));
       return;
     }
     await _startMonitoring();
@@ -192,7 +192,9 @@ class ClipboardController extends ChangeNotifier {
         );
         if (callbackRevision == null) {
           await service.stop();
-          if (!_disposed) _publish(snapshot.copyWith(monitoring: false));
+          if (!_disposed) {
+            _dispatchUi(const ClipboardMonitoringChanged(false));
+          }
           return;
         }
         final result = await store.capture(clipboardSnapshot);
@@ -203,7 +205,9 @@ class ClipboardController extends ChangeNotifier {
             stateMachine.dispatch(AppEvent.lockRequested);
           }
           await service.stop();
-          if (!_disposed) _publish(snapshot.copyWith(monitoring: false));
+          if (!_disposed) {
+            _dispatchUi(const ClipboardMonitoringChanged(false));
+          }
           return;
         }
         if (!_captureAuthorizationStillCurrent(
@@ -215,7 +219,9 @@ class ClipboardController extends ChangeNotifier {
       });
       if (!_captureAuthorizationStillCurrent(authorizedRevision)) {
         await service.stop();
-        if (!_disposed) _publish(snapshot.copyWith(monitoring: false));
+        if (!_disposed) {
+          _dispatchUi(const ClipboardMonitoringChanged(false));
+        }
         return;
       }
       if (stateMachine.state.capture == AppCaptureState.ready) {
@@ -224,12 +230,14 @@ class ClipboardController extends ChangeNotifier {
         );
         if (!transition.accepted) {
           await service.stop();
-          if (!_disposed) _publish(snapshot.copyWith(monitoring: false));
+          if (!_disposed) {
+            _dispatchUi(const ClipboardMonitoringChanged(false));
+          }
           return;
         }
       }
       if (!_disposed) {
-        _publish(snapshot.copyWith(monitoring: true, errorMessage: null));
+        _dispatchUi(const ClipboardMonitoringChanged(true, clearFailure: true));
       }
     } on Object {
       if (_disposed) return;
@@ -237,10 +245,10 @@ class ClipboardController extends ChangeNotifier {
         stateMachine.dispatch(AppEvent.captureFailed);
       }
       if (!_disposed) {
-        _publish(
-          snapshot.copyWith(
-            monitoring: false,
-            errorMessage: 'Automatic clipboard capture is unavailable',
+        _dispatchUi(
+          const ClipboardUiFailed(
+            'Automatic clipboard capture is unavailable',
+            stopMonitoring: true,
           ),
         );
       }
@@ -270,20 +278,19 @@ class ClipboardController extends ChangeNotifier {
   }
 
   Future<T> _run<T>(Future<T> Function() operation) async {
-    _publish(snapshot.copyWith(busy: true, errorMessage: null));
+    _dispatchUi(const ClipboardOperationStarted());
     try {
       return await operation();
     } on Object {
-      _publish(
-        snapshot.copyWith(
-          errorMessage:
-              'Clipboard operation failed without exposing its contents',
+      _dispatchUi(
+        const ClipboardUiFailed(
+          'Clipboard operation failed without exposing its contents',
         ),
       );
       rethrow;
     } finally {
       if (!_disposed) {
-        _publish(snapshot.copyWith(busy: false));
+        _dispatchUi(const ClipboardOperationFinished());
       }
     }
   }
