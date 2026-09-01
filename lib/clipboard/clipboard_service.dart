@@ -8,9 +8,8 @@ import 'package:super_clipboard/super_clipboard.dart';
 import '../history/clip_item.dart';
 import '../history/clipboard_snapshot.dart';
 
-typedef ClipboardSnapshotHandler = Future<void> Function(
-  ClipboardSnapshot snapshot,
-);
+typedef ClipboardSnapshotHandler =
+    Future<void> Function(ClipboardSnapshot snapshot);
 
 abstract interface class ClipClipboardService {
   bool get monitoring;

@@ -37,9 +37,9 @@ void main() {
 
   test('tampered ciphertext is rejected instead of reset or exposed', () async {
     await repository.save(demoClipItems());
-    final envelope = (jsonDecode(
-      utf8.decode(file.bytes!),
-    ) as Map<Object?, Object?>).cast<String, Object?>();
+    final envelope =
+        (jsonDecode(utf8.decode(file.bytes!)) as Map<Object?, Object?>)
+            .cast<String, Object?>();
     final cipherText = base64Decode(envelope['ciphertext']! as String);
     cipherText[0] ^= 0xff;
     envelope['ciphertext'] = base64Encode(cipherText);

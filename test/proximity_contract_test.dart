@@ -14,9 +14,11 @@ void main() {
   test(
     'shared proximity certification fixture parses and keeps valid digests',
     () async {
-      final fixture = jsonDecode(
-        await File('test/fixtures/proximity_v1.json').readAsString(),
-      ) as Map<String, Object?>;
+      final fixture =
+          jsonDecode(
+                await File('test/fixtures/proximity_v1.json').readAsString(),
+              )
+              as Map<String, Object?>;
       final advertisement = fixture['advertisement']! as Map<String, Object?>;
       expect(advertisement.keys.toSet(), <String>{
         'protocol',
