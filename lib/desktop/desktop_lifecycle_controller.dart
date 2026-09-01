@@ -1,5 +1,7 @@
 import 'dart:ui';
 
+import '../state/app_state_machine.dart';
+
 const Size defaultDesktopWindowSize = Size(1100, 760);
 const Size minimumDesktopWindowSize = Size(760, 520);
 
@@ -30,30 +32,47 @@ abstract interface class DesktopTrayPort {
 }
 
 class DesktopLifecycleController {
-  DesktopLifecycleController({required this.window, required this.tray});
+  DesktopLifecycleController({
+    required this.window,
+    required this.tray,
+    AppStateMachine? stateMachine,
+  }) : stateMachine =
+           stateMachine ?? AppStateMachine.signedOut(AppRuntimeKind.desktop);
 
   final DesktopWindowPort window;
   final DesktopTrayPort tray;
-  bool _quitting = false;
+  final AppStateMachine stateMachine;
 
-  bool get isQuitting => _quitting;
+  bool get isQuitting => stateMachine.state.isTerminating;
 
   Future<void> openMainWindow() async {
-    if (_quitting) return;
+    if (isQuitting) return;
 
-    await window.setSkipTaskbar(false);
-    await window.setMinimumSize(minimumDesktopWindowSize);
-    await window.setSize(defaultDesktopWindowSize);
-    await window.center();
-    await window.show();
-    await window.focus();
+    try {
+      await window.setSkipTaskbar(false);
+      await window.setMinimumSize(minimumDesktopWindowSize);
+      await window.setSize(defaultDesktopWindowSize);
+      await window.center();
+      await window.show();
+      await window.focus();
+      stateMachine.dispatch(AppEvent.foregroundRequested);
+    } on Object {
+      stateMachine.dispatch(AppEvent.nativeFailure);
+      rethrow;
+    }
   }
 
   Future<void> hideMainWindow() async {
-    if (_quitting) return;
+    if (isQuitting) return;
 
-    await window.hide();
-    await window.setSkipTaskbar(true);
+    try {
+      await window.hide();
+      await window.setSkipTaskbar(true);
+      stateMachine.dispatch(AppEvent.backgroundRequested);
+    } on Object {
+      stateMachine.dispatch(AppEvent.nativeFailure);
+      rethrow;
+    }
   }
 
   Future<void> handleWindowCloseRequested() => hideMainWindow();
@@ -65,17 +84,28 @@ class DesktopLifecycleController {
   };
 
   Future<void> quit() async {
-    if (_quitting) return;
-    _quitting = true;
+    final lifecycle = stateMachine.state.lifecycle;
+    if (lifecycle == AppLifecyclePhase.stopping ||
+        lifecycle == AppLifecyclePhase.stopped) {
+      return;
+    }
+    final shutdown = stateMachine.dispatch(AppEvent.shutdownRequested);
+    if (!shutdown.accepted) return;
 
     try {
-      await tray.destroy();
-    } finally {
       try {
-        await window.setPreventClose(false);
+        await tray.destroy();
       } finally {
-        await window.destroy();
+        try {
+          await window.setPreventClose(false);
+        } finally {
+          await window.destroy();
+        }
       }
+      stateMachine.dispatch(AppEvent.shutdownCompleted);
+    } on Object {
+      stateMachine.dispatch(AppEvent.nativeFailure);
+      rethrow;
     }
   }
 }
