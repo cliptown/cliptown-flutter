@@ -22,6 +22,9 @@ void main() {
       find.byKey(const ValueKey('cliptown-startup-loading')),
       findsOneWidget,
     );
+
+    startup.completeError(StateError('test startup shutdown'));
+    await tester.pump();
   });
 
   testWidgets('bounds vault startup and keeps retry available', (tester) async {
@@ -58,5 +61,7 @@ void main() {
       find.byKey(const ValueKey('cliptown-startup-loading')),
       findsOneWidget,
     );
+
+    await tester.pump(const Duration(milliseconds: 20));
   });
 }
