@@ -64,9 +64,7 @@ Future<ClipTownStartupResources> bootstrapClipTownRuntime() async {
 
     final isDesktop =
         Platform.isMacOS || Platform.isWindows || Platform.isLinux;
-    final runtime = isDesktop
-        ? AppRuntimeKind.desktop
-        : AppRuntimeKind.mobile;
+    final runtime = isDesktop ? AppRuntimeKind.desktop : AppRuntimeKind.mobile;
     stateMachine = store.vaultLocked
         ? AppStateMachine.vaultUnavailable(runtime)
         : AppStateMachine.localReady(

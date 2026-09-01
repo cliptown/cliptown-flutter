@@ -698,8 +698,7 @@ class _ClipTownHomeState extends State<ClipTownHome> {
                   onChanged: (value) => ignoredApplications = value,
                   decoration: const InputDecoration(
                     labelText: 'Excluded application identifiers',
-                    helperText:
-                        'Comma-separated. Enforced when a native source-app adapter supplies an identifier.',
+                    helperText: 'Comma-separated. Enforced when a native source-app adapter supplies an identifier.',
                   ),
                 ),
                 const SizedBox(height: 12),
@@ -710,8 +709,7 @@ class _ClipTownHomeState extends State<ClipTownHome> {
                   onChanged: (value) => historyLimit = value,
                   decoration: const InputDecoration(
                     labelText: 'Saved unpinned items',
-                    helperText:
-                        'Between 1 and 100,000. Pinned clips are retained separately.',
+                    helperText: 'Between 1 and 100,000. Pinned clips are retained separately.',
                   ),
                 ),
                 const SizedBox(height: 12),

@@ -143,12 +143,12 @@ void main() {
 
   test('iOS deployment target satisfies the Universal BLE minimum', () {
     final podfile = File('ios/Podfile').readAsStringSync();
-    final project = File(
-      'ios/Runner.xcodeproj/project.pbxproj',
-    ).readAsStringSync();
-    final deploymentTargets = RegExp(
-      r'IPHONEOS_DEPLOYMENT_TARGET = ([0-9.]+);',
-    ).allMatches(project).map((match) => match.group(1)).toSet();
+    final project = File('ios/Runner.xcodeproj/project.pbxproj')
+        .readAsStringSync();
+    final deploymentTargets = RegExp(r'IPHONEOS_DEPLOYMENT_TARGET = ([0-9.]+);')
+        .allMatches(project)
+        .map((match) => match.group(1))
+        .toSet();
 
     expect(podfile, contains("platform :ios, '13.1'"));
     expect(deploymentTargets, equals(<String>{'13.1'}));

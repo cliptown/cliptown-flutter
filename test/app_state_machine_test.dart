@@ -214,9 +214,8 @@ void main() {
   });
 
   test('an invalid externally constructed state cannot enter the machine', () {
-    final invalid = AppMachineState.initial(
-      AppRuntimeKind.mobile,
-    ).copyWith(windowVisible: true);
+    final invalid = AppMachineState.initial(AppRuntimeKind.mobile)
+        .copyWith(windowVisible: true);
 
     expect(invalid.invariantViolations(), isNotEmpty);
     expect(

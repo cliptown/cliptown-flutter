@@ -17,10 +17,9 @@ void main() {
       final fixturePath =
           Platform.environment['CLIPTOWN_TANDEM_FIXTURE'] ??
           'test/fixtures/local_history_v1.json';
-      final fixture =
-          (jsonDecode(await File(fixturePath).readAsString())
-                  as Map<Object?, Object?>)
-              .cast<String, Object?>();
+      final fixture = (jsonDecode(
+        await File(fixturePath).readAsString(),
+      ) as Map<Object?, Object?>).cast<String, Object?>();
       expect(fixture['contract'], 'cliptown.local-history.v1');
       expect(fixture['embedding_dimensions'], localEmbeddingDimensions);
 
