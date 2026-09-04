@@ -26,3 +26,7 @@ linter:
 
 # Additional information about this file can be found at
 # https://dart.dev/guides/language/analysis-options
+
+# Functional-programming profile — see FP-GUIDELINES.md.
+# Uncomment once the existing analyzer findings are triaged:
+# include: analysis_options.fp.yaml
