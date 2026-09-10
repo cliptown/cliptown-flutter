@@ -1,0 +1,48 @@
+# Contract authority: ores-otel/ores-interfaces/contracts/ores-otel-config
+version = 1
+mode = "client"
+strict = true
+
+[flags2env]
+contract = ".cli-flags.toml"
+require_audit = true
+precedence = "argv-over-env"
+
+[[env]]
+name = "service_name"
+key = "ORES_OTEL_SERVICE_NAME"
+kind = "string"
+required = false
+secret = false
+default = "cliptown-flutter"
+
+[[env]]
+name = "log_filter"
+key = "RUST_LOG"
+kind = "string"
+required = false
+secret = false
+default = "info"
+
+[[env]]
+name = "sample_ratio"
+key = "ORES_OTEL_SAMPLE_RATIO"
+kind = "double"
+required = false
+secret = false
+default = "1.0"
+
+[[env]]
+name = "include_trace_context"
+key = "ORES_OTEL_TRACE_CONTEXT"
+kind = "bool"
+required = false
+secret = false
+default = "true"
+
+[client]
+enabled = true
+service_name_binding = "service_name"
+log_filter_binding = "log_filter"
+sample_ratio_binding = "sample_ratio"
+include_trace_context_binding = "include_trace_context"
