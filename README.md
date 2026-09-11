@@ -28,6 +28,30 @@ The independent native Rust/GPUI desktop client lives in [`cliptown-desktop.rs`]
 
 The sibling `cliptown-interfaces` checkout is required at `../cliptown-interfaces` for the generated Dart wire package.
 
+## Formally checked app state
+
+`lib/state/app_state_machine.dart` is the single transition authority for the
+shared mobile and desktop control plane. It models app lifecycle,
+authentication, local-device trust, vault availability, network availability,
+window visibility, clipboard-capture intent/effects, and sync. The same machine
+instance is injected into Flutter lifecycle handling, the desktop tray/window
+host, and `ClipboardController`; construction rejects split authorities. Every
+event is handled by one pure total reducer:
+valid transitions advance a monotonic revision; invalid and reentrant events
+are rejected without changing state; native failures enter a controlled,
+locked, capture-disabled, sync-disabled fault state. Offline local capture is
+distinct from authenticated cloud sync, and asynchronous clipboard reads or
+watcher starts are discarded when a newer state revision invalidates them.
+When local capability is absent, loaded history is not rendered and persistent
+UI mutations are rejected through the same revision-checked gate.
+
+The product-owned Quint specification in `formal/app_lifecycle.qnt` checks the
+same safety gates. CI typechecks deterministic scenarios, explores critical
+states, performs bounded Apalache model checking, generates ITF traces, and
+replays every trace through the production Dart reducer. Dart tests separately
+exhaust every reachable finite control state against every event. See
+`formal/README.md` for the precise bounds, assumptions, and claim limitations.
+
 ## Security foundation
 
 - `lib/security/security_models.dart` defines revisioned pending/active/suspended/revoked devices, backup email/phone summaries, recovery challenges, and local biometric/passkey/PIN policy.
@@ -43,11 +67,14 @@ The six-digit PIN is a local unlock factor for a random device-wrapping key; it 
 
 ```sh
 flutter pub get
-dart format lib test integration_test
+dart format lib test integration_test tool
 flutter analyze --fatal-infos --fatal-warnings
 flutter test --coverage
 flutter test integration_test/desktop_lifecycle_test.dart -d macos
 flutter test integration_test/desktop_clipboard_e2e_test.dart -d macos
+npx --yes --package='@informalsystems/quint@0.32.0' \
+  quint test formal/app_lifecycle_test.qnt \
+  --main=app_lifecycle_test --match='.*Test$'
 ```
 
 GitHub Actions builds Linux, macOS, Windows, Android, and iOS simulator targets with pinned Flutter 3.44.2. Each desktop runner executes three installed-app journeys—create/search/pin, native clipboard capture/search/queue/copy, and close-to-background/tray restore—and uploads the application plus crash diagnostics. Android and iOS execute the product and security-center flows on emulators/simulators. A successful compile is not treated as an E2E pass.

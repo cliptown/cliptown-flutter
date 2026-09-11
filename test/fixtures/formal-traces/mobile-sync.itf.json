@@ -1,0 +1,94 @@
+{
+  "#meta": {
+    "description": "Deterministic mobile unlock and sync refinement fixture",
+    "format": "ITF",
+    "source": "formal/app_lifecycle.qnt"
+  },
+  "states": [
+    {
+      "mbt::actionTaken": "init",
+      "s": {
+        "runtime": {"#bigint": "0"},
+        "lifecycle": {"#bigint": "0"},
+        "authentication": {"#bigint": "0"},
+        "local_device": {"#bigint": "0"},
+        "vault": {"#bigint": "0"},
+        "sync": {"#bigint": "0"},
+        "capture": {"#bigint": "0"},
+        "capture_requested": false,
+        "online": false,
+        "window_visible": false,
+        "revocation_observed": false,
+        "revision": {"#bigint": "0"}
+      }
+    },
+    {
+      "mbt::actionTaken": "boot_authenticated",
+      "s": {
+        "runtime": {"#bigint": "0"},
+        "lifecycle": {"#bigint": "1"},
+        "authentication": {"#bigint": "1"},
+        "local_device": {"#bigint": "1"},
+        "vault": {"#bigint": "1"},
+        "sync": {"#bigint": "0"},
+        "capture": {"#bigint": "0"},
+        "capture_requested": false,
+        "online": false,
+        "window_visible": true,
+        "revocation_observed": false,
+        "revision": {"#bigint": "1"}
+      }
+    },
+    {
+      "mbt::actionTaken": "unlock_succeeded",
+      "s": {
+        "runtime": {"#bigint": "0"},
+        "lifecycle": {"#bigint": "1"},
+        "authentication": {"#bigint": "1"},
+        "local_device": {"#bigint": "1"},
+        "vault": {"#bigint": "2"},
+        "sync": {"#bigint": "1"},
+        "capture": {"#bigint": "0"},
+        "capture_requested": false,
+        "online": false,
+        "window_visible": true,
+        "revocation_observed": false,
+        "revision": {"#bigint": "2"}
+      }
+    },
+    {
+      "mbt::actionTaken": "network_connected",
+      "s": {
+        "runtime": {"#bigint": "0"},
+        "lifecycle": {"#bigint": "1"},
+        "authentication": {"#bigint": "1"},
+        "local_device": {"#bigint": "1"},
+        "vault": {"#bigint": "2"},
+        "sync": {"#bigint": "1"},
+        "capture": {"#bigint": "0"},
+        "capture_requested": false,
+        "online": true,
+        "window_visible": true,
+        "revocation_observed": false,
+        "revision": {"#bigint": "3"}
+      }
+    },
+    {
+      "mbt::actionTaken": "sync_requested",
+      "s": {
+        "runtime": {"#bigint": "0"},
+        "lifecycle": {"#bigint": "1"},
+        "authentication": {"#bigint": "1"},
+        "local_device": {"#bigint": "1"},
+        "vault": {"#bigint": "2"},
+        "sync": {"#bigint": "2"},
+        "capture": {"#bigint": "0"},
+        "capture_requested": false,
+        "online": true,
+        "window_visible": true,
+        "revocation_observed": false,
+        "revision": {"#bigint": "4"}
+      }
+    }
+  ]
+}

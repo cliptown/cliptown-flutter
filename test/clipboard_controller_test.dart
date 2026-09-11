@@ -1,12 +1,15 @@
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:cliptown_app/clipboard/clipboard_controller.dart';
 import 'package:cliptown_app/clipboard/clipboard_service.dart';
+import 'package:cliptown_app/history/capture_policy.dart';
 import 'package:cliptown_app/history/clip_item.dart';
 import 'package:cliptown_app/history/clip_repository.dart';
 import 'package:cliptown_app/history/clipboard_snapshot.dart';
 import 'package:cliptown_app/history/text_transform.dart';
 import 'package:cliptown_app/src/clip_store.dart';
+import 'package:cliptown_app/state.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -30,6 +33,7 @@ void main() {
   test('automatic monitoring captures supported changes', () async {
     await controller.initialize();
     expect(controller.monitoring, isTrue);
+    expect(controller.stateMachine.state.capture, AppCaptureState.monitoring);
 
     await clipboard.emit(
       ClipboardSnapshot.text(text: 'https://cliptown.example/feature'),
@@ -70,6 +74,8 @@ void main() {
     await controller.setCaptureEnabled(false);
 
     expect(controller.monitoring, isFalse);
+    expect(controller.stateMachine.state.captureRequested, isFalse);
+    expect(controller.stateMachine.state.capture, AppCaptureState.disabled);
     await clipboard.emit(ClipboardSnapshot.text(text: 'not captured'));
     expect(store.clips, isEmpty);
   });
@@ -96,4 +102,115 @@ void main() {
     expect(clipboard.lastWritten?.id, result.item!.id);
     expect(clipboard.lastTextOverride, '{\n  "b": 2,\n  "a": 1\n}');
   });
+
+  test(
+    'vault lock formally stops the desktop watcher before more capture',
+    () async {
+      await controller.initialize();
+      expect(controller.monitoring, isTrue);
+
+      final lock = controller.stateMachine.dispatch(AppEvent.lockRequested);
+      expect(lock.accepted, isTrue);
+      await controller.reconcileWithState();
+
+      expect(controller.monitoring, isFalse);
+      expect(controller.stateMachine.state.capture, AppCaptureState.disabled);
+      await clipboard.emit(
+        ClipboardSnapshot.text(text: 'must not be captured'),
+      );
+      expect(store.clips, isEmpty);
+    },
+  );
+
+  test(
+    'mobile background rejects manual capture without reading contents',
+    () async {
+      controller.dispose();
+      final machine = AppStateMachine.localReady(
+        AppRuntimeKind.mobile,
+        captureRequested: true,
+      );
+      addTearDown(machine.dispose);
+      final countingClipboard = _CountingClipboardService(
+        current: ClipboardSnapshot.text(text: 'must remain unread'),
+      );
+      clipboard = countingClipboard;
+      controller = ClipboardController(
+        store: store,
+        service: clipboard,
+        stateMachine: machine,
+      );
+
+      final background = machine.dispatch(AppEvent.backgroundRequested);
+      expect(background.accepted, isTrue);
+      final result = await controller.captureNow();
+
+      expect(result.accepted, isFalse);
+      expect(result.rejectionReason, CaptureRejectionReason.paused);
+      expect(machine.state.vault, AppVaultState.locked);
+      expect(machine.state.capture, AppCaptureState.disabled);
+      expect(countingClipboard.readCount, 0);
+      expect(store.clips, isEmpty);
+    },
+  );
+
+  test(
+    'stale clipboard read completion cannot persist after backgrounding',
+    () async {
+      controller.dispose();
+      final machine = AppStateMachine.localReady(
+        AppRuntimeKind.mobile,
+        captureRequested: true,
+      );
+      addTearDown(machine.dispose);
+      final deferredClipboard = _DeferredReadClipboardService();
+      clipboard = deferredClipboard;
+      controller = ClipboardController(
+        store: store,
+        service: clipboard,
+        stateMachine: machine,
+      );
+
+      final capture = controller.captureNow();
+      await expectLater(deferredClipboard.readStarted, completes);
+      expect(machine.dispatch(AppEvent.backgroundRequested).accepted, isTrue);
+      deferredClipboard.completeRead(
+        ClipboardSnapshot.text(text: 'stale completion'),
+      );
+
+      final result = await capture;
+      expect(result.accepted, isFalse);
+      expect(result.rejectionReason, CaptureRejectionReason.paused);
+      expect(store.clips, isEmpty);
+    },
+  );
+}
+
+class _CountingClipboardService extends MemoryClipClipboardService {
+  _CountingClipboardService({super.current});
+
+  int readCount = 0;
+
+  @override
+  Future<ClipboardSnapshot?> read() async {
+    readCount += 1;
+    return super.read();
+  }
+}
+
+class _DeferredReadClipboardService extends MemoryClipClipboardService {
+  final Completer<void> _readStarted = Completer<void>();
+  final Completer<ClipboardSnapshot?> _readResult =
+      Completer<ClipboardSnapshot?>();
+
+  Future<void> get readStarted => _readStarted.future;
+
+  void completeRead(ClipboardSnapshot snapshot) =>
+      _readResult.complete(snapshot);
+
+  @override
+  Future<ClipboardSnapshot?> read() {
+    if (!_readStarted.isCompleted) _readStarted.complete();
+    return _readResult.future;
+  }
 }

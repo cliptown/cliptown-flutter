@@ -12,6 +12,9 @@ on:
       - lib/**
       - test/**
       - integration_test/**
+      - formal/**
+      - tool/replay_formal_traces.dart
+      - .github/workflows/formal-methods.yml
       - .github/workflows/test.yml
       - .github/workflows/nix.yml
   pull_request:
@@ -25,6 +28,9 @@ on:
       - lib/**
       - test/**
       - integration_test/**
+      - formal/**
+      - tool/replay_formal_traces.dart
+      - .github/workflows/formal-methods.yml
       - .github/workflows/test.yml
       - .github/workflows/nix.yml
   workflow_dispatch:
@@ -56,7 +62,9 @@ jobs:
             --volume "$PWD:/repo" \
             --workdir /repo \
             rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667 \
-            .github/workflows/test.yml .github/workflows/nix.yml \
+            .github/workflows/test.yml \
+            .github/workflows/nix.yml \
+            .github/workflows/formal-methods.yml \
             > actionlint.txt 2>&1
 
       - name: Upload actionlint diagnostics
@@ -106,7 +114,11 @@ jobs:
         run: nix develop -c shfmt -i 2 -ci -d .nix/agent-check.sh
 
       - name: Validate GitHub Actions
-        run: nix develop -c actionlint .github/workflows/test.yml .github/workflows/nix.yml
+        run: |
+          nix develop -c actionlint \
+            .github/workflows/test.yml \
+            .github/workflows/nix.yml \
+            .github/workflows/formal-methods.yml
 
       - name: Evaluate and build flake checks
         run: nix develop -c nix flake check --show-trace

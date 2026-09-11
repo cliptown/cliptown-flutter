@@ -2,6 +2,7 @@ import 'dart:ui';
 
 import 'package:cliptown_app/desktop/desktop_lifecycle_controller.dart';
 import 'package:cliptown_app/desktop/desktop_lifecycle_host.dart';
+import 'package:cliptown_app/state.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -26,6 +27,10 @@ void main() {
       'show',
       'focus',
     ]);
+    expect(
+      controller.stateMachine.state.lifecycle,
+      AppLifecyclePhase.foreground,
+    );
   });
 
   test('window close hides to the tray instead of destroying app', () async {
@@ -33,6 +38,10 @@ void main() {
 
     expect(window.operations, <String>['hide', 'skipTaskbar:true']);
     expect(tray.destroyCount, 0);
+    expect(
+      controller.stateMachine.state.lifecycle,
+      AppLifecyclePhase.background,
+    );
   });
 
   test('tray hide action uses the same background lifecycle', () async {
@@ -48,6 +57,7 @@ void main() {
     expect(controller.isQuitting, isTrue);
     expect(tray.destroyCount, 1);
     expect(window.operations, <String>['preventClose:false', 'destroy']);
+    expect(controller.stateMachine.state.lifecycle, AppLifecyclePhase.stopped);
   });
 
   test('quit still destroys the application when tray cleanup fails', () async {
@@ -56,6 +66,36 @@ void main() {
     await expectLater(controller.quit(), throwsStateError);
 
     expect(window.operations, <String>['preventClose:false', 'destroy']);
+    expect(controller.stateMachine.state.lifecycle, AppLifecyclePhase.faulted);
+    expect(controller.stateMachine.state.vault, isNot(AppVaultState.unlocked));
+    expect(controller.stateMachine.state.sync, AppSyncState.disabled);
+  });
+
+  test('native window failure is contained as a controlled fault', () async {
+    window.hideError = StateError('native hide failed');
+
+    await expectLater(controller.hideMainWindow(), throwsStateError);
+
+    expect(controller.stateMachine.state.lifecycle, AppLifecyclePhase.faulted);
+    expect(controller.stateMachine.state.sync, AppSyncState.disabled);
+    expect(controller.stateMachine.state.windowVisible, isFalse);
+  });
+
+  test('explicit quit can finish shutdown from a controlled fault', () async {
+    window.hideError = StateError('native hide failed');
+    await expectLater(controller.hideMainWindow(), throwsStateError);
+    window.hideError = null;
+
+    await controller.handleTrayAction(DesktopTrayAction.quit);
+
+    expect(controller.stateMachine.state.lifecycle, AppLifecyclePhase.stopped);
+    expect(controller.stateMachine.state.invariantViolations(), isEmpty);
+    expect(tray.destroyCount, 1);
+    expect(window.operations, <String>[
+      'hide',
+      'preventClose:false',
+      'destroy',
+    ]);
   });
 
   test('tray menu keys map only to supported lifecycle actions', () {
@@ -77,6 +117,7 @@ void main() {
 
 class _RecordingWindow implements DesktopWindowPort {
   final List<String> operations = <String>[];
+  Object? hideError;
 
   @override
   Future<void> center() async => operations.add('center');
@@ -88,7 +129,10 @@ class _RecordingWindow implements DesktopWindowPort {
   Future<void> focus() async => operations.add('focus');
 
   @override
-  Future<void> hide() async => operations.add('hide');
+  Future<void> hide() async {
+    operations.add('hide');
+    if (hideError case final error?) throw error;
+  }
 
   @override
   Future<void> setMinimumSize(Size size) async =>

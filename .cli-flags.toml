@@ -1,0 +1,33 @@
+[identity]
+service = "cliptown-flutter"
+type_name = "RuntimeEnv"
+
+[help]
+url = "https://github.com/flags-2-env/flags-2-env"
+
+[parse]
+allow_unknown = false
+
+[env]
+load = false
+ignore = ["CLIPTOWN_AUTH_TOKEN", "OTEL_EXPORTER_OTLP_HEADERS"]
+
+[flags.config]
+env = "CLIPTOWN_CONFIG"
+long = "config"
+type = "string"
+help = "Path to client runtime configuration."
+
+[flags.otel-service-name]
+env = "ORES_OTEL_SERVICE_NAME"
+long = "otel-service-name"
+type = "string"
+default = "cliptown-flutter"
+help = "Non-secret OpenTelemetry service name."
+
+[flags.otel-sample-ratio]
+env = "ORES_OTEL_SAMPLE_RATIO"
+long = "otel-sample-ratio"
+type = "double"
+default = 1.0
+help = "Trace sampling ratio."
