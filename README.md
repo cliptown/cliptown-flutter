@@ -77,6 +77,11 @@ npx --yes --package='@informalsystems/quint@0.32.0' \
   --main=app_lifecycle_test --match='.*Test$'
 ```
 
+Android release builds intentionally fail unless the protected production
+signing environment is complete. See
+[Android release signing](docs/android-release-signing.md) for the owner setup,
+release-candidate workflow, retained evidence, and provider-verification gate.
+
 GitHub Actions builds Linux, macOS, Windows, Android, and iOS simulator targets with pinned Flutter 3.44.2. Each desktop runner executes three installed-app journeys—create/search/pin, native clipboard capture/search/queue/copy, and close-to-background/tray restore—and uploads the application plus crash diagnostics. Android and iOS execute the product and security-center flows on emulators/simulators. A successful compile is not treated as an E2E pass.
 
 The feature benchmark and release-blocking parity gaps are tracked in [`docs/competitive-parity.md`](docs/competitive-parity.md). “Parity” means tested behavior under the relevant OS constraints; documentation or an unexercised code path does not count.

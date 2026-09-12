@@ -1,7 +1,43 @@
+import org.gradle.api.GradleException
+
 plugins {
     id("com.android.application")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
+}
+
+val releaseTaskRequested = gradle.startParameter.taskNames.any { taskName ->
+    taskName.contains("release", ignoreCase = true)
+}
+
+val requiredReleaseEnvironment: (String) -> String = { name ->
+    val value = providers.environmentVariable(name).orNull?.trim().orEmpty()
+    if (value.isEmpty()) {
+        throw GradleException(
+            "$name is required for Android release builds. " +
+                "Provision it through the protected mobile-release environment.",
+        )
+    }
+    value
+}
+
+val releaseSigningValues = if (releaseTaskRequested) {
+    val keystorePath = requiredReleaseEnvironment("CLIPTOWN_ANDROID_KEYSTORE_PATH")
+    val keystoreFile = file(keystorePath)
+    if (!keystoreFile.isFile) {
+        throw GradleException(
+            "CLIPTOWN_ANDROID_KEYSTORE_PATH must reference an existing non-committed keystore file.",
+        )
+    }
+
+    mapOf(
+        "storePath" to keystoreFile.absolutePath,
+        "storePassword" to requiredReleaseEnvironment("CLIPTOWN_ANDROID_KEYSTORE_PASSWORD"),
+        "keyAlias" to requiredReleaseEnvironment("CLIPTOWN_ANDROID_KEY_ALIAS"),
+        "keyPassword" to requiredReleaseEnvironment("CLIPTOWN_ANDROID_KEY_PASSWORD"),
+    )
+} else {
+    emptyMap()
 }
 
 android {
@@ -15,7 +51,7 @@ android {
     }
 
     defaultConfig {
-        // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
+        // This is the durable Google Play / Android developer-verification identity.
         applicationId = "com.cliptown.cliptown_app"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
@@ -28,11 +64,22 @@ android {
         versionName = flutter.versionName
     }
 
+    signingConfigs {
+        if (releaseTaskRequested) {
+            create("release") {
+                storeFile = file(releaseSigningValues.getValue("storePath"))
+                storePassword = releaseSigningValues.getValue("storePassword")
+                keyAlias = releaseSigningValues.getValue("keyAlias")
+                keyPassword = releaseSigningValues.getValue("keyPassword")
+            }
+        }
+    }
+
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+            if (releaseTaskRequested) {
+                signingConfig = signingConfigs.getByName("release")
+            }
         }
     }
 }
