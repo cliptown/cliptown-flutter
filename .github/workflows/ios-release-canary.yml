@@ -20,7 +20,7 @@ env:
 
 jobs:
   iphoneos-release-canary:
-    runs-on: macos-15
+    runs-on: macos-26
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -41,11 +41,17 @@ jobs:
           flutter-version: ${{ env.FLUTTER_VERSION }}
           cache: true
 
-      - name: Record Apple toolchain
+      - name: Enforce TestFlight Apple toolchain
         working-directory: cliptown-flutter
+        shell: bash
         run: |
+          set -euo pipefail
           flutter --version
           xcodebuild -version
+          xcode_version="$(xcodebuild -version | awk '/^Xcode / {print $2; exit}')"
+          xcode_major="${xcode_version%%.*}"
+          [[ "$xcode_major" =~ ^[0-9]+$ ]] || { echo "::error::Unable to parse Xcode version: $xcode_version"; exit 1; }
+          (( xcode_major >= 26 )) || { echo "::error::App Store Connect requires Xcode 26+ for iOS uploads as of 2026-04-28"; exit 1; }
 
       - name: Resolve Flutter and CocoaPods dependencies
         working-directory: cliptown-flutter
