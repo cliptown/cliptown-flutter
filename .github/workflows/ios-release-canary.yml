@@ -1,0 +1,80 @@
+name: iOS release canary
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cliptown-ios-release-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  FLUTTER_VERSION: 3.44.2
+  CLIPTOWN_INTERFACES_REF: e4e957b5372dc363fe6a52559c8959f0de781efb
+
+jobs:
+  iphoneos-release-canary:
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: cliptown-flutter
+          persist-credentials: false
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: cliptown/cliptown-interfaces
+          ref: ${{ env.CLIPTOWN_INTERFACES_REF }}
+          path: cliptown-interfaces
+          persist-credentials: false
+
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+
+      - name: Record Apple toolchain
+        working-directory: cliptown-flutter
+        run: |
+          flutter --version
+          xcodebuild -version
+
+      - name: Resolve Flutter and CocoaPods dependencies
+        working-directory: cliptown-flutter
+        run: |
+          set -euo pipefail
+          flutter pub get
+          git diff --exit-code -- pubspec.lock
+          (cd ios && pod install)
+
+      - name: Reject placeholder bundle identifiers
+        working-directory: cliptown-flutter
+        shell: bash
+        run: |
+          set -euo pipefail
+          bundle_id="$(xcodebuild -project ios/Runner.xcodeproj -scheme Runner -configuration Release -showBuildSettings \
+            | awk -F ' = ' '/PRODUCT_BUNDLE_IDENTIFIER = / {print $2; exit}')"
+          [[ -n "$bundle_id" ]] || { echo "::error::Release PRODUCT_BUNDLE_IDENTIFIER is empty"; exit 1; }
+          case "$bundle_id" in
+            com.example.*|org.example.*|example.*)
+              echo "::error::placeholder iOS bundle identifier: $bundle_id"
+              exit 1
+              ;;
+          esac
+          echo "Release bundle identifier: $bundle_id"
+
+      - name: Compile unsigned iPhoneOS release
+        working-directory: cliptown-flutter
+        run: flutter build ios --release --no-codesign --no-pub
+
+      - name: Require release application output
+        working-directory: cliptown-flutter
+        run: test -d build/ios/iphoneos/Runner.app
