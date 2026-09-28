@@ -42,7 +42,8 @@ val releaseSigningValues = if (releaseTaskRequested) {
 
 android {
     namespace = "com.cliptown.cliptown_app"
-    compileSdk = flutter.compileSdkVersion
+    // Current Google Play submissions require Android 16 / API 36.
+    compileSdk = 36
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
@@ -53,13 +54,11 @@ android {
     defaultConfig {
         // This is the durable Google Play / Android developer-verification identity.
         applicationId = "com.cliptown.cliptown_app"
-        // You can update the following values to match your application needs.
-        // For more information, see: https://flutter.dev/to/review-gradle-config.
         // universal_ble's Android backend requires API 24. Keeping this
         // explicit prevents a dependency update from silently changing the
         // minimum supported ClipTown device.
         minSdk = 24
-        targetSdk = flutter.targetSdkVersion
+        targetSdk = 36
         versionCode = flutter.versionCode
         versionName = flutter.versionName
     }
