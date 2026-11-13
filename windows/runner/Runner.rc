@@ -90,12 +90,12 @@ BEGIN
         BLOCK "040904e4"
         BEGIN
             VALUE "CompanyName", "com.cliptown" "\0"
-            VALUE "FileDescription", "cliptown_app" "\0"
+            VALUE "FileDescription", "ClipTown" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
             VALUE "InternalName", "cliptown_app" "\0"
             VALUE "LegalCopyright", "Copyright (C) 2026 com.cliptown. All rights reserved." "\0"
             VALUE "OriginalFilename", "cliptown_app.exe" "\0"
-            VALUE "ProductName", "cliptown_app" "\0"
+            VALUE "ProductName", "ClipTown" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
     END
