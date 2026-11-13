@@ -202,7 +202,9 @@ class ClipStore extends ChangeNotifier {
 
   Future<void> setHistoryLimit(int value) => _enqueue(() async {
     if (value < 1 || value > 100000) {
-      throw const FormatException('history limit must be between 1 and 100000');
+      throw const ClipInputException(
+        'History limit must be between 1 and 100,000 items',
+      );
     }
     if (_policy.maxHistoryItems == value) return;
     final previous = _policy;
@@ -295,7 +297,7 @@ class ClipStore extends ChangeNotifier {
   Future<void> rename(String id, String title) => _enqueue(() async {
     final trimmed = title.trim();
     if (trimmed.isEmpty || trimmed.length > 512) {
-      throw const FormatException('clip title must be 1 to 512 characters');
+      throw const ClipInputException('Titles must be 1 to 512 characters');
     }
     await _commit(() {
       final index = _indexOf(id);
@@ -307,7 +309,9 @@ class ClipStore extends ChangeNotifier {
       _enqueue(() async {
         final normalized = collection?.trim();
         if (normalized != null && normalized.length > 160) {
-          throw const FormatException('collection name is too long');
+          throw const ClipInputException(
+            'Collection names must be at most 160 characters',
+          );
         }
         await _commit(() {
           final index = _indexOf(id);
@@ -324,7 +328,9 @@ class ClipStore extends ChangeNotifier {
         .where((tag) => tag.isNotEmpty)
         .toSet();
     if (normalized.length > 32 || normalized.any((tag) => tag.length > 80)) {
-      throw const FormatException('clip tags exceed limits');
+      throw const ClipInputException(
+        'Use at most 32 tags of up to 80 characters each',
+      );
     }
     await _commit(() {
       final index = _indexOf(id);
@@ -340,9 +346,23 @@ class ClipStore extends ChangeNotifier {
     final index = _indexOf(id);
     final existing = _clips[index];
     if (existing.text == null || existing.kind == ClipKind.files) {
-      throw const FormatException('only text clips can be edited');
+      throw const ClipInputException('Only text clips can be edited');
     }
     if (text == existing.text) return;
+    final duplicate = _clips.indexWhere(
+      (clip) =>
+          clip.id != id &&
+          clip.kind != ClipKind.files &&
+          clip.text == text &&
+          clip.html == null &&
+          clip.dataBase64 == null,
+    );
+    if (duplicate >= 0) {
+      // Two clips with identical content would break capture de-duplication.
+      throw const ClipInputException(
+        'An identical clip is already in your history',
+      );
+    }
     final snapshot = ClipboardSnapshot.text(
       text: text,
       sourceApplication: existing.sourceApplication,
@@ -351,7 +371,7 @@ class ClipStore extends ChangeNotifier {
     if (rejection != null) {
       _statusMessage = captureRejectionLabel(rejection);
       notifyListeners();
-      throw FormatException(captureRejectionLabel(rejection));
+      throw ClipInputException(captureRejectionLabel(rejection));
     }
     final autoTitle =
         existing.title ==
@@ -433,6 +453,49 @@ class ClipStore extends ChangeNotifier {
 
   ClipItem itemById(String id) => _clips[_indexOf(id)];
 
+  /// Lookup without copying the history (unlike [clips]).
+  ClipItem? findById(String id) {
+    for (final clip in _clips) {
+      if (clip.id == id) return clip;
+    }
+    return null;
+  }
+
+  /// The [limit] most recently used clips, newest first, without sorting or
+  /// copying the whole history.
+  List<ClipItem> mostRecent(int limit) {
+    final top = <ClipItem>[];
+    for (final clip in _clips) {
+      var index = top.length;
+      while (index > 0 &&
+          top[index - 1].sortTimestamp.isBefore(clip.sortTimestamp)) {
+        index -= 1;
+      }
+      if (index < limit) {
+        top.insert(index, clip);
+        if (top.length > limit) top.removeLast();
+      }
+    }
+    return top;
+  }
+
+  /// Undo for [delete]: puts a removed clip back unless an identical clip
+  /// was captured in the meantime.
+  Future<void> restore(ClipItem clip) => _enqueue(() async {
+    if (_clips.any(
+      (existing) =>
+          existing.id == clip.id ||
+          existing.fingerprintMaterial == clip.fingerprintMaterial,
+    )) {
+      return;
+    }
+    clip.validate();
+    await _commit(() {
+      _clips.add(clip);
+      _statusMessage = 'Clip restored';
+    });
+  });
+
   Future<void> eraseVault() => _enqueue(() async {
     await _repository.clear();
     _clips.clear();
@@ -512,4 +575,10 @@ class ClipStore extends ChangeNotifier {
     });
     return completer.future;
   }
+}
+
+/// A rejected user edit whose [message] is safe to show: it is a fixed string
+/// and never contains clipboard content (unlike e.g. a JSON decode error).
+class ClipInputException extends FormatException {
+  const ClipInputException(super.message);
 }

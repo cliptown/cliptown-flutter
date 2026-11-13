@@ -132,7 +132,14 @@ class DesktopLifecycleHost
   Future<void> summon({bool flashTray = false}) async {
     if (controller.isQuitting) return;
     if (flashTray && _trayReady) unawaited(_flasher.flash());
-    await controller.openMainWindow();
+    try {
+      await controller.openMainWindow();
+    } on Object catch (error) {
+      // Called from hotkey/tray callbacks that nobody awaits. The controller
+      // already moved the state machine to its native-failure state.
+      debugPrint('ClipTown could not open its window: $error');
+      return;
+    }
     _summonCount.value += 1;
   }
 
@@ -157,7 +164,11 @@ class DesktopLifecycleHost
   Future<void> _applyTrayMenu() async {
     try {
       await trayManager.setContextMenu(
-        buildTrayMenu(_trayMenu, isMacOS: Platform.isMacOS),
+        buildTrayMenu(
+          _trayMenu,
+          isMacOS: Platform.isMacOS,
+          isWindows: Platform.isWindows,
+        ),
       );
     } on Object {
       // The previous menu stays in place; the next store change retries.
@@ -188,7 +199,11 @@ class DesktopLifecycleHost
       'ClipTown clipboard history (${summonShortcutLabel(isMacOS: Platform.isMacOS)})',
     );
     await trayManager.setContextMenu(
-      buildTrayMenu(_trayMenu, isMacOS: Platform.isMacOS),
+      buildTrayMenu(
+        _trayMenu,
+        isMacOS: Platform.isMacOS,
+        isWindows: Platform.isWindows,
+      ),
     );
   }
 

@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 import 'package:tray_manager/tray_manager.dart';
 
+import '../history/capture_policy.dart';
 import '../history/clip_item.dart';
 import 'desktop_shortcuts.dart';
 import 'launch_at_login.dart';
@@ -101,15 +102,34 @@ class DesktopTrayMenuModel {
       Object.hash(captureOn, captureAvailable, Object.hashAll(recentClips));
 }
 
+/// Shown instead of the text of a clip that looks like a secret. The tray menu
+/// is visible to anyone looking at (or screen-sharing) the menu bar.
+const String sensitiveTrayLabel = '•••••• hidden (looks sensitive)';
+
+/// Characters that must never reach a native menu label: C0/C1 controls and
+/// the Unicode bidirectional overrides/isolates/marks that can visually
+/// reorder (spoof) text.
+final RegExp _unsafeLabelCharacters = RegExp(
+  r'[\x00-\x1f\x7f-\x9f\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]',
+);
+
 /// One-line, bounded tray label for a clip. Whitespace is collapsed so
-/// multi-line clips never produce multi-line native menu items.
+/// multi-line clips never produce multi-line native menu items, control and
+/// bidi-override characters are removed, and likely secrets are masked.
 String trayLabelForClip(ClipItem clip) {
+  final text = clip.text;
+  if (text != null && isLikelySensitiveText(text)) {
+    return clip.pinned ? '★ $sensitiveTrayLabel' : sensitiveTrayLabel;
+  }
   final source = switch (clip.kind) {
     ClipKind.image => clip.title,
     ClipKind.files => clip.summary,
-    _ => (clip.text ?? clip.title),
+    _ => (text ?? clip.title),
   };
-  final collapsed = source.replaceAll(RegExp(r'\s+'), ' ').trim();
+  final collapsed = source
+      .replaceAll(RegExp(r'\s+'), ' ')
+      .replaceAll(_unsafeLabelCharacters, '')
+      .trim();
   final characters =
       (collapsed.isEmpty ? clip.kind.label : collapsed).characters;
   final label = characters.length > _trayLabelMaxCharacters
@@ -118,12 +138,21 @@ String trayLabelForClip(ClipItem clip) {
   return clip.pinned ? '★ $label' : label;
 }
 
+/// Windows menus treat `&` as an accelerator prefix; double it so clip text
+/// renders literally.
+String nativeMenuLabel(String label, {required bool isWindows}) =>
+    isWindows ? label.replaceAll('&', '&&') : label;
+
 String? recentClipIdForMenuKey(String? key) =>
     key != null && key.startsWith(recentClipMenuKeyPrefix)
     ? key.substring(recentClipMenuKeyPrefix.length)
     : null;
 
-Menu buildTrayMenu(DesktopTrayMenuModel model, {required bool isMacOS}) {
+Menu buildTrayMenu(
+  DesktopTrayMenuModel model, {
+  required bool isMacOS,
+  bool isWindows = false,
+}) {
   final summon = summonShortcutLabel(isMacOS: isMacOS);
   final dismiss = dismissShortcutLabel(isMacOS: isMacOS);
   return Menu(
@@ -140,7 +169,7 @@ Menu buildTrayMenu(DesktopTrayMenuModel model, {required bool isMacOS}) {
       ...model.recentClips.map(
         (entry) => MenuItem(
           key: '$recentClipMenuKeyPrefix${entry.id}',
-          label: entry.label,
+          label: nativeMenuLabel(entry.label, isWindows: isWindows),
         ),
       ),
       MenuItem.separator(),

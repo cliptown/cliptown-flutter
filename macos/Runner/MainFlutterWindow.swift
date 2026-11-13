@@ -51,7 +51,10 @@ enum LaunchAtLoginChannel {
         result(AppDelegate.launchedAsLoginItem)
       case "isEnabled":
         if #available(macOS 13.0, *) {
-          result(SMAppService.mainApp.status == .enabled)
+          // requiresApproval: registered, waiting for the user in System
+          // Settings. Report it as on so the toggle matches the request.
+          let status = SMAppService.mainApp.status
+          result(status == .enabled || status == .requiresApproval)
         } else {
           result(false)
         }
@@ -68,7 +71,15 @@ enum LaunchAtLoginChannel {
         do {
           if enabled {
             try SMAppService.mainApp.register()
-          } else {
+            if SMAppService.mainApp.status == .requiresApproval {
+              SMAppService.openSystemSettingsLoginItems()
+              result(
+                FlutterError(
+                  code: "requires_approval",
+                  message: "Approve ClipTown in System Settings > Login Items", details: nil))
+              return
+            }
+          } else if SMAppService.mainApp.status != .notRegistered {
             try SMAppService.mainApp.unregister()
           }
           result(nil)

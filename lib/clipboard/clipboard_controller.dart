@@ -87,9 +87,9 @@ class ClipboardController extends ChangeNotifier {
     }
     final savedId = observation.savedClipId;
     if (savedId != null) {
-      final saved = store.clips.where((clip) => clip.id == savedId);
-      if (saved.isNotEmpty &&
-          saved.first.fingerprintMaterial == observation.fingerprint) {
+      final saved = store.findById(savedId);
+      if (saved != null &&
+          saved.fingerprintMaterial == observation.fingerprint) {
         return const ClipboardSaveStatus(
           ClipboardSaveAvailability.alreadySaved,
           automatic: true,
@@ -253,6 +253,9 @@ class ClipboardController extends ChangeNotifier {
   Future<void> _startMonitoring() async {
     final authorizedRevision = _authorizedCaptureRevision();
     if (authorizedRevision == null) return;
+    // Whatever was observed before a pause is stale: the clipboard may have
+    // changed while nothing was watching it.
+    _lastObservation = null;
     try {
       await service.start((clipboardSnapshot) async {
         final callbackRevision = _authorizedCaptureRevision(

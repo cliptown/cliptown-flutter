@@ -394,4 +394,122 @@ void main() {
     expect(edited.title, 'hello');
     expect(find.byKey(const Key('color-swatch-brand')), findsNothing);
   });
+
+  testWidgets('Return activates a focused button instead of copying', (
+    tester,
+  ) async {
+    final h = await _pump(tester);
+    final pinIcon = find.descendant(
+      of: find.byKey(const Key('pin-design-reference')),
+      matching: find.byType(Icon),
+    );
+    Focus.of(tester.element(pinIcon)).requestFocus();
+    await tester.pump();
+
+    await _press(tester, LogicalKeyboardKey.enter);
+    expect(h.store.itemById('design-reference').pinned, isTrue);
+    expect(h.clipboard.lastWritten, isNull);
+    expect(h.shell.dismissals, 0);
+  });
+
+  testWidgets('Alt+Backspace edits search text; on empty search it deletes '
+      'with undo', (tester) async {
+    final h = await _pump(tester);
+    final search = find.byKey(const Key('clip-search'));
+    await tester.tap(search);
+    await tester.enterText(search, 'deploy');
+    await tester.pumpAndSettle();
+    final before = h.store.clips.length;
+
+    await _press(
+      tester,
+      LogicalKeyboardKey.backspace,
+      modifier: LogicalKeyboardKey.altLeft,
+    );
+    expect(h.store.clips.length, before, reason: 'word delete, not clip');
+
+    await tester.enterText(search, '');
+    await tester.pumpAndSettle();
+    await _press(
+      tester,
+      LogicalKeyboardKey.backspace,
+      modifier: LogicalKeyboardKey.altLeft,
+    );
+    expect(h.store.clips.length, before - 1);
+    expect(h.store.findById('deploy-command'), isNull);
+    expect(find.byKey(const Key('clip-deleted-snackbar')), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('undo-delete')));
+    await tester.pumpAndSettle();
+    expect(h.store.findById('deploy-command'), isNotNull);
+    expect(h.store.clips.length, before);
+  });
+
+  testWidgets('menu delete is undoable too', (tester) async {
+    final h = await _pump(tester);
+    await tester.tap(find.byKey(const Key('actions-security-notes')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Delete'));
+    await tester.pumpAndSettle();
+    expect(h.store.findById('security-notes'), isNull);
+    await tester.tap(find.byKey(const Key('undo-delete')));
+    await tester.pumpAndSettle();
+    expect(h.store.findById('security-notes'), isNotNull);
+  });
+
+  testWidgets('validation failures show their reason, not a generic error', (
+    tester,
+  ) async {
+    await _pump(tester);
+    await tester.tap(find.byKey(const Key('actions-security-notes')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Edit text'));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const Key('edit-clip-text')),
+      'kubectl rollout status deployment/cliptown-api',
+    );
+    await tester.tap(find.byKey(const Key('save-edited-clip')));
+    await tester.pumpAndSettle();
+    expect(
+      find.text('An identical clip is already in your history'),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('tray never receives the text of a likely secret', (
+    tester,
+  ) async {
+    final store = ClipStore(
+      repository: MemoryClipRepository(
+        seed: <ClipItem>[
+          ClipItem(
+            id: 'secret',
+            kind: ClipKind.text,
+            title: 'secret',
+            text: '-----BEGIN PRIVATE KEY-----\nabc\n-----END PRIVATE KEY-----',
+            createdAt: demoFixtureBase,
+            lastUsedAt: demoFixtureBase,
+          ),
+        ],
+      ),
+      clock: demoClock,
+    );
+    await store.initialize();
+    final h = await _pump(tester, store: store);
+    final labels = h.shell.lastMenu!.recentClips.map((e) => e.label);
+    expect(labels, <String>[sensitiveTrayLabel]);
+    expect(labels.join(), isNot(contains('PRIVATE KEY')));
+  });
+
+  testWidgets('status line says when the summon shortcut is unavailable', (
+    tester,
+  ) async {
+    final store = await createDemoStore();
+    await tester.pumpWidget(
+      ClipTownApp(store: store, desktopBackgroundEnabled: true),
+    );
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Alt+C shortcut unavailable'), findsOneWidget);
+  });
 }

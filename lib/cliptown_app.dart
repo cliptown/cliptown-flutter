@@ -225,6 +225,7 @@ class _ClipTownHomeState extends State<ClipTownHome> {
   ClipboardController get clipboardController => widget.clipboardController;
   DesktopShell? get desktopShell => widget.desktopShell;
 
+  final FocusNode _rootFocus = FocusNode(debugLabel: 'clip-home');
   final FocusNode _searchFocus = FocusNode(debugLabel: 'clip-search');
   final TextEditingController _searchController = TextEditingController();
   final GlobalKey _selectedRowKey = GlobalKey(debugLabel: 'selected-clip');
@@ -267,6 +268,7 @@ class _ClipTownHomeState extends State<ClipTownHome> {
     desktopShell?.summonCount.removeListener(_onSummoned);
     store.removeListener(_syncTrayMenu);
     stateMachine.removeListener(_syncTrayMenu);
+    _rootFocus.dispose();
     _searchFocus.dispose();
     _searchController.dispose();
     super.dispose();
@@ -298,13 +300,24 @@ class _ClipTownHomeState extends State<ClipTownHome> {
     );
   }
 
+  bool _traySyncScheduled = false;
+
+  /// Coalesces bursts of store/state notifications into one tray update.
   void _syncTrayMenu() {
+    if (desktopShell == null || _traySyncScheduled) return;
+    _traySyncScheduled = true;
+    scheduleMicrotask(() {
+      _traySyncScheduled = false;
+      if (mounted) _pushTrayMenu();
+    });
+  }
+
+  void _pushTrayMenu() {
     final shell = desktopShell;
     if (shell == null) return;
     final state = stateMachine.state;
     final recent = state.permitsLocalWork
-        ? (store.clips.toList()
-            ..sort((a, b) => b.sortTimestamp.compareTo(a.sortTimestamp)))
+        ? store.mostRecent(trayRecentClipLimit)
         : const <ClipItem>[];
     shell.updateTrayMenu(
       DesktopTrayMenuModel.fromClips(
@@ -316,9 +329,9 @@ class _ClipTownHomeState extends State<ClipTownHome> {
   }
 
   void _copyFromTray(String id) {
-    final matches = store.clips.where((clip) => clip.id == id);
-    if (matches.isEmpty) return;
-    unawaited(_run(() => clipboardController.copy(matches.first)));
+    final clip = store.findById(id);
+    if (clip == null) return;
+    unawaited(_run(() => clipboardController.copy(clip)));
   }
 
   ClipItem? get _selectedClip => _visibleClips.isEmpty
@@ -379,7 +392,20 @@ class _ClipTownHomeState extends State<ClipTownHome> {
     setState(() => _selectedIndex = 0);
   }
 
-  Map<ShortcutActivator, VoidCallback> get _keyBindings {
+  /// Arrow/Page/Return drive the clip picker only while the search field (or
+  /// nothing more specific) has focus. When a button, chip or menu is focused
+  /// those keys fall through, so keyboard users can still activate controls.
+  bool get _pickerHasFocus {
+    final focused = FocusManager.instance.primaryFocus;
+    return focused == null || focused == _searchFocus || focused == _rootFocus;
+  }
+
+  /// Option/Alt+Backspace deletes a word while there is search text to edit;
+  /// only an empty (or unfocused) search turns it into "delete selected clip".
+  bool get _deleteShortcutApplies =>
+      !(_searchFocus.hasFocus && _searchController.text.isNotEmpty);
+
+  List<_KeyBinding> get _keyBindings {
     final quickCopyKeys = <LogicalKeyboardKey>[
       LogicalKeyboardKey.digit1,
       LogicalKeyboardKey.digit2,
@@ -391,48 +417,119 @@ class _ClipTownHomeState extends State<ClipTownHome> {
       LogicalKeyboardKey.digit8,
       LogicalKeyboardKey.digit9,
     ];
-    return <ShortcutActivator, VoidCallback>{
-      const SingleActivator(LogicalKeyboardKey.arrowDown): () =>
-          _moveSelection(1),
-      const SingleActivator(LogicalKeyboardKey.arrowUp): () =>
-          _moveSelection(-1),
-      const SingleActivator(LogicalKeyboardKey.pageDown): () =>
-          _moveSelection(5),
-      const SingleActivator(LogicalKeyboardKey.pageUp): () =>
-          _moveSelection(-5),
-      const SingleActivator(LogicalKeyboardKey.enter): _copySelected,
-      const SingleActivator(LogicalKeyboardKey.numpadEnter): _copySelected,
-      const SingleActivator(LogicalKeyboardKey.escape): _onEscape,
-      dismissActivator: () => unawaited(desktopShell?.dismiss()),
-      const SingleActivator(LogicalKeyboardKey.keyP, alt: true): () {
-        final clip = _selectedClip;
-        if (clip != null) _runLocal(() => store.togglePinned(clip.id));
-      },
-      const SingleActivator(LogicalKeyboardKey.backspace, alt: true): () {
-        final clip = _selectedClip;
-        if (clip != null) _runLocal(() => store.delete(clip.id));
-      },
-      SingleActivator(
-        LogicalKeyboardKey.keyF,
-        meta: _isApple,
-        control: !_isApple,
-      ): () =>
-          _searchFocus.requestFocus(),
-      for (var index = 0; index < quickCopyKeys.length; index += 1)
+    bool picker() => _pickerHasFocus;
+    return <_KeyBinding>[
+      _KeyBinding(
+        const SingleActivator(LogicalKeyboardKey.arrowDown),
+        () => _moveSelection(1),
+        when: picker,
+      ),
+      _KeyBinding(
+        const SingleActivator(LogicalKeyboardKey.arrowUp),
+        () => _moveSelection(-1),
+        when: picker,
+      ),
+      _KeyBinding(
+        const SingleActivator(LogicalKeyboardKey.pageDown),
+        () => _moveSelection(5),
+        when: picker,
+      ),
+      _KeyBinding(
+        const SingleActivator(LogicalKeyboardKey.pageUp),
+        () => _moveSelection(-5),
+        when: picker,
+      ),
+      _KeyBinding(
+        const SingleActivator(LogicalKeyboardKey.enter),
+        _copySelected,
+        when: picker,
+      ),
+      _KeyBinding(
+        const SingleActivator(LogicalKeyboardKey.numpadEnter),
+        _copySelected,
+        when: picker,
+      ),
+      _KeyBinding(const SingleActivator(LogicalKeyboardKey.escape), _onEscape),
+      _KeyBinding(dismissActivator, () => unawaited(desktopShell?.dismiss())),
+      _KeyBinding(
+        const SingleActivator(LogicalKeyboardKey.keyP, alt: true),
+        () {
+          final clip = _selectedClip;
+          if (clip != null) _runLocal(() => store.togglePinned(clip.id));
+        },
+      ),
+      _KeyBinding(
+        const SingleActivator(LogicalKeyboardKey.backspace, alt: true),
+        () {
+          final clip = _selectedClip;
+          if (clip != null) unawaited(_deleteWithUndo(clip));
+        },
+        when: () => _deleteShortcutApplies,
+      ),
+      _KeyBinding(
         SingleActivator(
-          quickCopyKeys[index],
+          LogicalKeyboardKey.keyF,
           meta: _isApple,
           control: !_isApple,
-        ): () =>
-            _copyAt(index),
-    };
+        ),
+        _searchFocus.requestFocus,
+      ),
+      for (var index = 0; index < quickCopyKeys.length; index += 1)
+        _KeyBinding(
+          SingleActivator(
+            quickCopyKeys[index],
+            meta: _isApple,
+            control: !_isApple,
+          ),
+          () => _copyAt(index),
+        ),
+    ];
+  }
+
+  KeyEventResult _onKeyEvent(FocusNode node, KeyEvent event) {
+    if (event is KeyUpEvent) return KeyEventResult.ignored;
+    for (final binding in _keyBindings) {
+      if (binding.activator.accepts(event, HardwareKeyboard.instance) &&
+          (binding.when?.call() ?? true)) {
+        binding.onKey();
+        return KeyEventResult.handled;
+      }
+    }
+    return KeyEventResult.ignored;
+  }
+
+  /// Deletion is the one destructive action reachable from the keyboard, so
+  /// it is always undoable.
+  Future<void> _deleteWithUndo(ClipItem clip) async {
+    var deleted = false;
+    await _runLocal(() async {
+      await store.delete(clip.id);
+      deleted = true;
+      return null;
+    });
+    if (!deleted || !mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          key: const Key('clip-deleted-snackbar'),
+          content: Text('Deleted "${clip.title}"'),
+          action: SnackBarAction(
+            key: const Key('undo-delete'),
+            label: 'Undo',
+            onPressed: () => _runLocal(() => store.restore(clip)),
+          ),
+        ),
+      );
   }
 
   @override
   Widget build(BuildContext context) {
-    return CallbackShortcuts(
-      bindings: _keyBindings,
-      child: Focus(autofocus: true, child: _buildScaffold(context)),
+    return Focus(
+      focusNode: _rootFocus,
+      autofocus: true,
+      onKeyEvent: _onKeyEvent,
+      child: _buildScaffold(context),
     );
   }
 
@@ -792,6 +889,8 @@ class _ClipTownHomeState extends State<ClipTownHome> {
       widget.desktopBackgroundEnabled ? 'Tray active' : 'Foreground mode',
       if (widget.desktopHotKeyEnabled)
         '${summonShortcutLabel(isMacOS: _isApple)} opens • ${dismissShortcutLabel(isMacOS: _isApple)} hides',
+      if (widget.desktopBackgroundEnabled && !widget.desktopHotKeyEnabled)
+        '${summonShortcutLabel(isMacOS: _isApple)} shortcut unavailable',
       stateMachine.state.captureRequested ? 'capture on' : 'capture paused',
     ];
     return pieces.join(' • ');
@@ -808,7 +907,7 @@ class _ClipTownHomeState extends State<ClipTownHome> {
       case _ClipAction.collection:
         await _assignCollection(clip);
       case _ClipAction.delete:
-        await _runLocal(() => store.delete(clip.id));
+        await _deleteWithUndo(clip);
       case _ClipAction.plainText:
         await _run(
           () => clipboardController.copy(
@@ -1177,13 +1276,12 @@ class _ClipTownHomeState extends State<ClipTownHome> {
   Future<void> _run(FutureOr<Object?> Function() action) async {
     try {
       await action();
-    } on Object {
+    } on Object catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'The operation failed without exposing clipboard data.',
-          ),
+        SnackBar(
+          key: const Key('operation-failed-snackbar'),
+          content: Text(userFacingFailure(error)),
         ),
       );
     }
@@ -1601,3 +1699,28 @@ String _formatTimestamp(DateTime timestamp) {
   return '${local.year}-${two(local.month)}-${two(local.day)} '
       '${two(local.hour)}:${two(local.minute)}';
 }
+
+@immutable
+class _KeyBinding {
+  const _KeyBinding(this.activator, this.onKey, {this.when});
+
+  final ShortcutActivator activator;
+  final VoidCallback onKey;
+
+  /// Extra condition; when false the key is left for the focused widget.
+  final bool Function()? when;
+}
+
+/// The message shown for a failed operation. Only messages known to be fixed
+/// strings are surfaced; anything else (e.g. a JSON decode error that quotes
+/// its input) could contain clipboard content and is replaced.
+@visibleForTesting
+String userFacingFailure(Object error) => switch (error) {
+  ClipInputException(:final message) => message,
+  PlatformException(code: 'requires_approval') =>
+    'Approve ClipTown in System Settings → General → Login Items to finish '
+        'turning on Open at login.',
+  PlatformException(code: 'unsupported') =>
+    'Open at login needs macOS 13 or later.',
+  _ => 'The operation failed without exposing clipboard data.',
+};

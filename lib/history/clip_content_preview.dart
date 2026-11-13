@@ -58,8 +58,9 @@ class _ClipContentPreviewState extends State<ClipContentPreview> {
   String get _displayText {
     final text = widget.text;
     if (text.length <= maxPreviewCharacters) return text;
-    final hidden = text.length - maxPreviewCharacters;
-    return '${text.substring(0, maxPreviewCharacters)}\n… $hidden more characters (copy the clip to get all of it)';
+    final cut = safePreviewCut(text, maxPreviewCharacters);
+    final hidden = text.length - cut;
+    return '${text.substring(0, cut)}\n… $hidden more characters (copy the clip to get all of it)';
   }
 
   @override
@@ -147,4 +148,13 @@ class _ClipContentPreviewState extends State<ClipContentPreview> {
       },
     );
   }
+}
+
+/// A cut index at or below [limit] that never splits a UTF-16 surrogate pair:
+/// a lone surrogate is malformed text that the engine may refuse to lay out.
+int safePreviewCut(String text, int limit) {
+  if (text.length <= limit) return text.length;
+  final last = text.codeUnitAt(limit - 1);
+  final isHighSurrogate = last >= 0xD800 && last <= 0xDBFF;
+  return isHighSurrogate ? limit - 1 : limit;
 }

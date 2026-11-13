@@ -89,6 +89,8 @@ class WindowsLaunchAtLogin implements LaunchAtLogin {
 
   String get runCommand => windowsRunCommand(executable);
 
+  /// Enabled only when the Run value launches *this* executable; a value left
+  /// behind by a moved or older install reads as off and is rewritten.
   @override
   Future<bool> isEnabled() async {
     final result = await _run('reg', <String>[
@@ -97,7 +99,8 @@ class WindowsLaunchAtLogin implements LaunchAtLogin {
       '/v',
       _windowsRunValue,
     ]);
-    return result.exitCode == 0;
+    return result.exitCode == 0 &&
+        '${result.stdout}'.toLowerCase().contains(runCommand.toLowerCase());
   }
 
   @override
@@ -144,8 +147,15 @@ class LinuxLaunchAtLogin implements LaunchAtLogin {
 
   File get _entry => File('$autostartDirectory/$_linuxAutostartFileName');
 
+  /// Enabled only when the entry launches *this* executable.
   @override
-  Future<bool> isEnabled() => _entry.exists();
+  Future<bool> isEnabled() async {
+    try {
+      return await _entry.readAsString() == linuxAutostartEntry(executable);
+    } on FileSystemException {
+      return false;
+    }
+  }
 
   @override
   Future<void> setEnabled(bool enabled) async {
@@ -154,7 +164,10 @@ class LinuxLaunchAtLogin implements LaunchAtLogin {
       return;
     }
     await Directory(autostartDirectory).create(recursive: true);
-    await _entry.writeAsString(linuxAutostartEntry(executable), flush: true);
+    // Write-then-rename so a crash never leaves a truncated autostart entry.
+    final staging = File('${_entry.path}.tmp');
+    await staging.writeAsString(linuxAutostartEntry(executable), flush: true);
+    await staging.rename(_entry.path);
   }
 }
 
