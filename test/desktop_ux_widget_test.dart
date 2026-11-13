@@ -572,4 +572,22 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('open-at-login-toggle')), findsNothing);
   });
+
+  testWidgets('app bar shows the ClipTown logo beside the name', (
+    tester,
+  ) async {
+    await _pump(tester);
+    final logo = find.byKey(const Key('app-logo'));
+    expect(logo, findsOneWidget);
+    expect(
+      find.ancestor(of: logo, matching: find.byType(AppBar)),
+      findsOneWidget,
+    );
+    expect(
+      tester.getCenter(logo).dx,
+      lessThan(tester.getCenter(find.text('ClipTown')).dx),
+      reason: 'logo sits to the left of the name',
+    );
+    expect(tester.widget<Image>(logo).semanticLabel, 'ClipTown logo');
+  });
 }

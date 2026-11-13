@@ -523,7 +523,7 @@ class _ClipTownHomeState extends State<ClipTownHome> {
   Widget _buildScaffold(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('ClipTown'),
+        title: const _AppTitle(),
         actions: <Widget>[
           IconButton(
             key: const Key('nearby-share'),
@@ -1716,3 +1716,31 @@ String userFacingFailure(Object error) => switch (error) {
     'Open at login needs macOS 13 or later.',
   _ => 'The operation failed without exposing clipboard data.',
 };
+
+/// App bar brand mark: the ClipTown icon beside the name.
+class _AppTitle extends StatelessWidget {
+  const _AppTitle();
+
+  @override
+  Widget build(BuildContext context) => Row(
+    mainAxisSize: MainAxisSize.min,
+    children: <Widget>[
+      Tooltip(
+        message: 'ClipTown — encrypted, searchable clipboard history',
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(7),
+          child: Image.asset(
+            'assets/icon/app_icon_256.png',
+            key: const Key('app-logo'),
+            width: 30,
+            height: 30,
+            filterQuality: FilterQuality.medium,
+            semanticLabel: 'ClipTown logo',
+          ),
+        ),
+      ),
+      const SizedBox(width: 10),
+      const Text('ClipTown'),
+    ],
+  );
+}
