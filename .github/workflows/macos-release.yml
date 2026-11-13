@@ -1,0 +1,97 @@
+name: macOS release
+
+# Publishes ClipTown-macos.zip (+ .sha256) to a GitHub Release. The installer
+# (scripts/install-macos.sh) downloads exactly these two assets and refuses to
+# install when the checksum does not match.
+#
+# The build is ad-hoc signed (no Apple Developer ID yet), so it uses
+# macos/Runner/AdHoc.entitlements and the login Keychain. Developer ID signing
+# and notarization replace that once the Apple team and secrets exist.
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to create or update (e.g. v0.1.0)
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: macos-release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CLIPTOWN_INTERFACES_REF: e4e957b5372dc363fe6a52559c8959f0de781efb
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+          path: cliptown-flutter
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+          repository: cliptown/cliptown-interfaces
+          ref: ${{ env.CLIPTOWN_INTERFACES_REF }}
+          path: cliptown-interfaces
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+        with:
+          flutter-version: '3.44.2'
+          cache: true
+      - name: Build ad-hoc signed release
+        shell: bash
+        working-directory: cliptown-flutter
+        run: |
+          set -euo pipefail
+          flutter config --enable-macos-desktop
+          flutter pub get
+          git diff --exit-code -- pubspec.lock
+          app="$(scripts/build-macos-adhoc.sh | tail -n 1)"
+          mkdir -p dist
+          ditto "$app" dist/ClipTown.app
+          (cd dist && ditto -c -k --sequesterRsrc --keepParent ClipTown.app ClipTown-macos.zip)
+          (cd dist && shasum -a 256 ClipTown-macos.zip > ClipTown-macos.zip.sha256)
+          cat dist/ClipTown-macos.zip.sha256
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: cliptown-macos
+          path: |
+            cliptown-flutter/dist/ClipTown-macos.zip
+            cliptown-flutter/dist/ClipTown-macos.zip.sha256
+          if-no-files-found: error
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: cliptown-macos
+          path: dist
+      - name: Publish GitHub release assets
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
+          TARGET: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          (cd dist && shasum -a 256 -c ClipTown-macos.zip.sha256)
+          if gh release view "$TAG" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$TAG" dist/ClipTown-macos.zip dist/ClipTown-macos.zip.sha256 \
+              -R "$GITHUB_REPOSITORY" --clobber
+          else
+            gh release create "$TAG" dist/ClipTown-macos.zip dist/ClipTown-macos.zip.sha256 \
+              -R "$GITHUB_REPOSITORY" --target "$TARGET" --title "ClipTown $TAG" \
+              --notes "Install: curl -fsSL https://raw.githubusercontent.com/cliptown/cliptown-flutter/main/scripts/install-macos.sh | bash"
+          fi

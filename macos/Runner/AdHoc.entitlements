@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<!--
+  Release entitlements for ad-hoc signed builds: the source installer
+  (scripts/install-macos.sh) and the unsigned GitHub release. Identical to
+  Release.entitlements minus keychain-access-groups, which only a provisioned
+  development/Developer ID certificate can sign. Those builds must also pass
+  CLIPTOWN_MACOS_DATA_PROTECTION_KEYCHAIN=false so the vault key lives in the
+  encrypted login Keychain. Swapped in by scripts/build-macos-adhoc.sh.
+-->
+<dict>
+	<key>com.apple.security.app-sandbox</key>
+	<true/>
+	<key>com.apple.security.device.bluetooth</key>
+	<true/>
+</dict>
+</plist>
