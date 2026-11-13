@@ -74,6 +74,16 @@ set_target_properties(${BINARY_NAME}
 # them to the application.
 include(flutter/generated_plugins.cmake)
 
+# Third-party plugin sources keep their warnings visible but not fatal. Newer
+# toolchains (e.g. the Ubuntu 26.04 runner clang and deprecated libappindicator
+# APIs) flag code in hotkey_manager_linux and tray_manager that we do not own;
+# ClipTown's own runner still builds with -Wall -Werror.
+foreach(plugin ${FLUTTER_PLUGIN_LIST})
+  if(TARGET ${plugin}_plugin)
+    target_compile_options(${plugin}_plugin PRIVATE -Wno-error)
+  endif()
+endforeach(plugin)
+
 
 # === Installation ===
 # By default, "installing" just makes a relocatable bundle in the build
