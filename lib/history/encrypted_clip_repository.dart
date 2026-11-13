@@ -195,17 +195,32 @@ class EncryptedClipRepository implements ClipRepository {
   }
 }
 
+/// Whether macOS stores the vault key in the data-protection Keychain.
+///
+/// Defaults to release mode. Ad-hoc signed release builds must pass
+/// `--dart-define=CLIPTOWN_MACOS_DATA_PROTECTION_KEYCHAIN=false`; without a
+/// provisioning profile the data-protection Keychain refuses them and the vault
+/// would stay locked on every launch.
+const bool macOSDataProtectionKeychain = bool.fromEnvironment(
+  'CLIPTOWN_MACOS_DATA_PROTECTION_KEYCHAIN',
+  defaultValue: kReleaseMode,
+);
+
 class FlutterSecureVaultSecretStore implements VaultSecretStore {
   FlutterSecureVaultSecretStore({FlutterSecureStorage? storage})
     : _storage =
           storage ??
           const FlutterSecureStorage(
             aOptions: AndroidOptions(resetOnError: false),
-            // Ad-hoc debug signatures cannot claim the restricted macOS
-            // keychain access-group entitlement. Debug/profile builds still
-            // use the encrypted login Keychain; signed releases opt into the
-            // data-protection Keychain with provisioned entitlements.
-            mOptions: MacOsOptions(usesDataProtectionKeychain: kReleaseMode),
+            // Ad-hoc signatures cannot claim the restricted macOS keychain
+            // access-group entitlement. Debug/profile builds and ad-hoc
+            // signed release builds (the source installer and unsigned
+            // GitHub release) use the encrypted login Keychain; provisioned,
+            // Developer ID signed releases opt into the data-protection
+            // Keychain. See [macOSDataProtectionKeychain].
+            mOptions: MacOsOptions(
+              usesDataProtectionKeychain: macOSDataProtectionKeychain,
+            ),
           );
 
   final FlutterSecureStorage _storage;

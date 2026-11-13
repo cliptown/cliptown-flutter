@@ -43,7 +43,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(
-      find.text('Tray active • ⌘/Ctrl+Shift+V ready • capture on'),
+      find.text('Tray active • Alt+C opens • Alt+X hides • capture on'),
       findsOneWidget,
     );
     expect(

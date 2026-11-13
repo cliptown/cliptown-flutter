@@ -1,11 +1,17 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'clipboard/clipboard_controller.dart';
 import 'clipboard/clipboard_service.dart';
 import 'desktop/desktop_lifecycle_host.dart';
+import 'desktop/desktop_shell.dart';
+import 'desktop/desktop_shortcuts.dart';
+import 'history/clip_content_preview.dart';
+import 'history/clip_formatting.dart';
 import 'history/clip_item.dart';
 import 'history/text_transform.dart';
 import 'proximity/nearby_share_page.dart';
@@ -21,6 +27,7 @@ class ClipTownApp extends StatefulWidget {
     this.disposeStateMachine = false,
     this.clipboardController,
     this.desktopLifecycleHost,
+    this.desktopShell,
     this.desktopBackgroundEnabled = false,
     this.desktopHotKeyEnabled = false,
   });
@@ -31,6 +38,9 @@ class ClipTownApp extends StatefulWidget {
   final bool disposeStateMachine;
   final ClipboardController? clipboardController;
   final DesktopLifecycleHost? desktopLifecycleHost;
+
+  /// Defaults to [desktopLifecycleHost]; tests inject a fake shell.
+  final DesktopShell? desktopShell;
   final bool desktopBackgroundEnabled;
   final bool desktopHotKeyEnabled;
 
@@ -154,6 +164,7 @@ class _ClipTownAppState extends State<ClipTownApp> with WidgetsBindingObserver {
         store: store,
         stateMachine: stateMachine,
         clipboardController: clipboardController,
+        desktopShell: widget.desktopShell ?? widget.desktopLifecycleHost,
         desktopBackgroundEnabled: widget.desktopBackgroundEnabled,
         desktopHotKeyEnabled: widget.desktopHotKeyEnabled,
       ),
@@ -189,6 +200,7 @@ class ClipTownHome extends StatefulWidget {
     required this.store,
     required this.stateMachine,
     required this.clipboardController,
+    this.desktopShell,
     this.desktopBackgroundEnabled = false,
     this.desktopHotKeyEnabled = false,
   });
@@ -196,6 +208,7 @@ class ClipTownHome extends StatefulWidget {
   final ClipStore store;
   final AppStateMachine stateMachine;
   final ClipboardController clipboardController;
+  final DesktopShell? desktopShell;
   final bool desktopBackgroundEnabled;
   final bool desktopHotKeyEnabled;
 
@@ -207,9 +220,220 @@ class _ClipTownHomeState extends State<ClipTownHome> {
   ClipStore get store => widget.store;
   AppStateMachine get stateMachine => widget.stateMachine;
   ClipboardController get clipboardController => widget.clipboardController;
+  DesktopShell? get desktopShell => widget.desktopShell;
+
+  final FocusNode _searchFocus = FocusNode(debugLabel: 'clip-search');
+  final TextEditingController _searchController = TextEditingController();
+  final GlobalKey _selectedRowKey = GlobalKey(debugLabel: 'selected-clip');
+  int _selectedIndex = 0;
+  List<ClipItem> _visibleClips = const <ClipItem>[];
+
+  bool get _isApple =>
+      defaultTargetPlatform == TargetPlatform.macOS ||
+      defaultTargetPlatform == TargetPlatform.iOS;
+
+  @override
+  void initState() {
+    super.initState();
+    _attachShell(desktopShell);
+    store.addListener(_syncTrayMenu);
+    stateMachine.addListener(_syncTrayMenu);
+    _syncTrayMenu();
+  }
+
+  @override
+  void didUpdateWidget(ClipTownHome oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.desktopShell != desktopShell) {
+      oldWidget.desktopShell?.summonCount.removeListener(_onSummoned);
+      _attachShell(desktopShell);
+      _syncTrayMenu();
+    }
+    if (oldWidget.store != store) {
+      oldWidget.store.removeListener(_syncTrayMenu);
+      store.addListener(_syncTrayMenu);
+    }
+    if (oldWidget.stateMachine != stateMachine) {
+      oldWidget.stateMachine.removeListener(_syncTrayMenu);
+      stateMachine.addListener(_syncTrayMenu);
+    }
+  }
+
+  @override
+  void dispose() {
+    desktopShell?.summonCount.removeListener(_onSummoned);
+    store.removeListener(_syncTrayMenu);
+    stateMachine.removeListener(_syncTrayMenu);
+    _searchFocus.dispose();
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  void _attachShell(DesktopShell? shell) {
+    if (shell == null) return;
+    shell.summonCount.addListener(_onSummoned);
+    shell.setTrayHandlers(
+      DesktopTrayHandlers(
+        onRecentClipSelected: _copyFromTray,
+        onToggleCapture: () => _run(
+          () => clipboardController.setCaptureEnabled(
+            !stateMachine.state.captureRequested,
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Summoned via the global shortcut or tray: start a fresh keyboard search.
+  void _onSummoned() {
+    if (!mounted) return;
+    setState(() => _selectedIndex = 0);
+    _searchFocus.requestFocus();
+    _searchController.selection = TextSelection(
+      baseOffset: 0,
+      extentOffset: _searchController.text.length,
+    );
+  }
+
+  void _syncTrayMenu() {
+    final shell = desktopShell;
+    if (shell == null) return;
+    final state = stateMachine.state;
+    final recent = state.permitsLocalWork
+        ? (store.clips.toList()
+            ..sort((a, b) => b.sortTimestamp.compareTo(a.sortTimestamp)))
+        : const <ClipItem>[];
+    shell.updateTrayMenu(
+      DesktopTrayMenuModel.fromClips(
+        recent,
+        captureOn: state.captureRequested,
+        captureAvailable: state.permitsLocalWork || state.captureRequested,
+      ),
+    );
+  }
+
+  void _copyFromTray(String id) {
+    final matches = store.clips.where((clip) => clip.id == id);
+    if (matches.isEmpty) return;
+    unawaited(_run(() => clipboardController.copy(matches.first)));
+  }
+
+  ClipItem? get _selectedClip => _visibleClips.isEmpty
+      ? null
+      : _visibleClips[_selectedIndex.clamp(0, _visibleClips.length - 1)];
+
+  void _moveSelection(int delta) {
+    if (_visibleClips.isEmpty) return;
+    final next = (_selectedIndex + delta).clamp(0, _visibleClips.length - 1);
+    if (next == _selectedIndex) return;
+    setState(() => _selectedIndex = next);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final rowContext = _selectedRowKey.currentContext;
+      if (rowContext == null || !rowContext.mounted) return;
+      Scrollable.ensureVisible(
+        rowContext,
+        duration: const Duration(milliseconds: 90),
+        alignmentPolicy: delta > 0
+            ? ScrollPositionAlignmentPolicy.keepVisibleAtEnd
+            : ScrollPositionAlignmentPolicy.keepVisibleAtStart,
+      );
+    });
+  }
+
+  /// Copy, then get out of the way so the user can paste where they were.
+  Future<void> _copyAndDismiss(ClipItem clip) async {
+    var copied = false;
+    await _run(() async {
+      await clipboardController.copy(clip);
+      copied = true;
+      return null;
+    });
+    if (copied) await desktopShell?.dismiss();
+  }
+
+  void _copySelected() {
+    final clip = _selectedClip;
+    if (clip != null) unawaited(_copyAndDismiss(clip));
+  }
+
+  void _copyAt(int index) {
+    if (index < _visibleClips.length) {
+      unawaited(_copyAndDismiss(_visibleClips[index]));
+    }
+  }
+
+  void _onEscape() {
+    if (_searchController.text.isNotEmpty) {
+      _searchController.clear();
+      _onQueryChanged('');
+      return;
+    }
+    unawaited(desktopShell?.dismiss());
+  }
+
+  void _onQueryChanged(String value) {
+    store.setQuery(value);
+    setState(() => _selectedIndex = 0);
+  }
+
+  Map<ShortcutActivator, VoidCallback> get _keyBindings {
+    final quickCopyKeys = <LogicalKeyboardKey>[
+      LogicalKeyboardKey.digit1,
+      LogicalKeyboardKey.digit2,
+      LogicalKeyboardKey.digit3,
+      LogicalKeyboardKey.digit4,
+      LogicalKeyboardKey.digit5,
+      LogicalKeyboardKey.digit6,
+      LogicalKeyboardKey.digit7,
+      LogicalKeyboardKey.digit8,
+      LogicalKeyboardKey.digit9,
+    ];
+    return <ShortcutActivator, VoidCallback>{
+      const SingleActivator(LogicalKeyboardKey.arrowDown): () =>
+          _moveSelection(1),
+      const SingleActivator(LogicalKeyboardKey.arrowUp): () =>
+          _moveSelection(-1),
+      const SingleActivator(LogicalKeyboardKey.pageDown): () =>
+          _moveSelection(5),
+      const SingleActivator(LogicalKeyboardKey.pageUp): () =>
+          _moveSelection(-5),
+      const SingleActivator(LogicalKeyboardKey.enter): _copySelected,
+      const SingleActivator(LogicalKeyboardKey.numpadEnter): _copySelected,
+      const SingleActivator(LogicalKeyboardKey.escape): _onEscape,
+      dismissActivator: () => unawaited(desktopShell?.dismiss()),
+      const SingleActivator(LogicalKeyboardKey.keyP, alt: true): () {
+        final clip = _selectedClip;
+        if (clip != null) _runLocal(() => store.togglePinned(clip.id));
+      },
+      const SingleActivator(LogicalKeyboardKey.backspace, alt: true): () {
+        final clip = _selectedClip;
+        if (clip != null) _runLocal(() => store.delete(clip.id));
+      },
+      SingleActivator(
+        LogicalKeyboardKey.keyF,
+        meta: _isApple,
+        control: !_isApple,
+      ): () =>
+          _searchFocus.requestFocus(),
+      for (var index = 0; index < quickCopyKeys.length; index += 1)
+        SingleActivator(
+          quickCopyKeys[index],
+          meta: _isApple,
+          control: !_isApple,
+        ): () =>
+            _copyAt(index),
+    };
+  }
 
   @override
   Widget build(BuildContext context) {
+    return CallbackShortcuts(
+      bindings: _keyBindings,
+      child: Focus(autofocus: true, child: _buildScaffold(context)),
+    );
+  }
+
+  Widget _buildScaffold(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: const Text('ClipTown'),
@@ -300,6 +524,11 @@ class _ClipTownHomeState extends State<ClipTownHome> {
   Widget _buildBody(BuildContext context) {
     final localWorkAllowed = stateMachine.state.permitsLocalWork;
     final clips = localWorkAllowed ? store.visibleClips : const <ClipItem>[];
+    _visibleClips = clips;
+    final selectedIndex = clips.isEmpty
+        ? -1
+        : _selectedIndex.clamp(0, clips.length - 1);
+    final now = DateTime.now();
     final header = Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
@@ -327,7 +556,7 @@ class _ClipTownHomeState extends State<ClipTownHome> {
               !localWorkAllowed || clipboardController.errorMessage != null,
         ),
         const SizedBox(height: 12),
-        _buildSearchAndCapture(),
+        _buildSearch(),
         const SizedBox(height: 10),
         _buildFilters(),
         if (store.queueLength > 0) ...<Widget>[
@@ -354,9 +583,18 @@ class _ClipTownHomeState extends State<ClipTownHome> {
               key: const Key('clip-history-list'),
               delegate: SliverChildBuilderDelegate((context, index) {
                 if (index.isOdd) return const SizedBox(height: 8);
-                final clip = clips[index ~/ 2];
+                final clipIndex = index ~/ 2;
+                final clip = clips[clipIndex];
+                final selected = clipIndex == selectedIndex;
                 return _ClipCard(
+                  key: selected ? _selectedRowKey : ValueKey(clip.id),
                   clip: clip,
+                  now: now,
+                  selected: selected,
+                  quickCopyLabel: clipIndex < 9
+                      ? '${_isApple ? '⌘' : 'Ctrl+'}${clipIndex + 1}'
+                      : null,
+                  onSelect: () => setState(() => _selectedIndex = clipIndex),
                   queued: store.queuedIds.contains(clip.id),
                   onCopy: () => _run(() => clipboardController.copy(clip)),
                   onToggleQueued: () =>
@@ -372,42 +610,18 @@ class _ClipTownHomeState extends State<ClipTownHome> {
     );
   }
 
-  Widget _buildSearchAndCapture() {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final search = TextField(
-          key: const Key('clip-search'),
-          onChanged: store.setQuery,
-          decoration: const InputDecoration(
-            prefixIcon: Icon(Icons.search),
-            labelText:
-                'Search content, related text, tags, collections, and apps',
-          ),
-        );
-        final capture = FilledButton.icon(
-          key: const Key('capture-now'),
-          onPressed:
-              clipboardController.busy || !stateMachine.state.permitsCaptureWork
-              ? null
-              : () => _run(clipboardController.captureNow),
-          icon: const Icon(Icons.content_paste_go),
-          label: const Text('Capture now'),
-        );
-        if (constraints.maxWidth < 700) {
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: <Widget>[search, const SizedBox(height: 8), capture],
-          );
-        }
-        return Row(
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: <Widget>[
-            Expanded(child: search),
-            const SizedBox(width: 10),
-            capture,
-          ],
-        );
-      },
+  Widget _buildSearch() {
+    return TextField(
+      key: const Key('clip-search'),
+      controller: _searchController,
+      focusNode: _searchFocus,
+      autofocus: desktopShell != null,
+      onChanged: _onQueryChanged,
+      decoration: const InputDecoration(
+        prefixIcon: Icon(Icons.search),
+        labelText: 'Search content, related text, tags, collections, and apps',
+        helperText: '↑ ↓ to select • Return copies • Esc clears or hides',
+      ),
     );
   }
 
@@ -473,6 +687,24 @@ class _ClipTownHomeState extends State<ClipTownHome> {
         Text(
           stateMachine.state.captureRequested ? 'Capture on' : 'Capture off',
         ),
+        // Desktop capture is automatic; a manual "save what is on the clipboard
+        // now" only matters where nothing is watching the clipboard (mobile, or
+        // a desktop without a clipboard watcher). It lives with the capture
+        // controls, not next to search, so it is not mistaken for a search action.
+        if (!clipboardController.monitoring &&
+            stateMachine.state.permitsCaptureWork)
+          Tooltip(
+            message:
+                'Save whatever is on the system clipboard right now into history',
+            child: OutlinedButton.icon(
+              key: const Key('capture-now'),
+              onPressed: clipboardController.busy
+                  ? null
+                  : () => _run(clipboardController.captureNow),
+              icon: const Icon(Icons.content_paste_go, size: 18),
+              label: const Text('Save clipboard now'),
+            ),
+          ),
       ],
     );
   }
@@ -509,7 +741,8 @@ class _ClipTownHomeState extends State<ClipTownHome> {
     }
     final pieces = <String>[
       widget.desktopBackgroundEnabled ? 'Tray active' : 'Foreground mode',
-      if (widget.desktopHotKeyEnabled) '⌘/Ctrl+Shift+V ready',
+      if (widget.desktopHotKeyEnabled)
+        '${summonShortcutLabel(isMacOS: _isApple)} opens • ${dismissShortcutLabel(isMacOS: _isApple)} hides',
       stateMachine.state.captureRequested ? 'capture on' : 'capture paused',
     ];
     return pieces.join(' • ');
@@ -519,6 +752,10 @@ class _ClipTownHomeState extends State<ClipTownHome> {
     switch (action) {
       case _ClipAction.rename:
         await _renameClip(clip);
+      case _ClipAction.editText:
+        await _editClipText(clip);
+      case _ClipAction.tags:
+        await _editTags(clip);
       case _ClipAction.collection:
         await _assignCollection(clip);
       case _ClipAction.delete:
@@ -631,6 +868,79 @@ class _ClipTownHomeState extends State<ClipTownHome> {
     if (title != null) await _runLocal(() => store.rename(clip.id, title));
   }
 
+  Future<void> _editClipText(ClipItem clip) async {
+    var value = clip.text ?? '';
+    final text = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Edit clip'),
+        content: SizedBox(
+          width: 560,
+          child: TextFormField(
+            key: const Key('edit-clip-text'),
+            initialValue: value,
+            autofocus: true,
+            minLines: 4,
+            maxLines: 16,
+            onChanged: (newValue) => value = newValue,
+          ),
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            key: const Key('save-edited-clip'),
+            onPressed: () => Navigator.pop(context, value),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+    if (text != null && text.trim().isNotEmpty) {
+      await _runLocal(() => store.editText(clip.id, text));
+    }
+  }
+
+  Future<void> _editTags(ClipItem clip) async {
+    var value = (clip.tags.toList()..sort()).join(', ');
+    final tags = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Tags'),
+        content: TextFormField(
+          key: const Key('clip-tags'),
+          initialValue: value,
+          autofocus: true,
+          onChanged: (newValue) => value = newValue,
+          decoration: const InputDecoration(
+            labelText: 'Tags',
+            helperText: 'Comma-separated. Tags are searchable.',
+          ),
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            key: const Key('save-clip-tags'),
+            onPressed: () => Navigator.pop(context, value),
+            child: const Text('Apply'),
+          ),
+        ],
+      ),
+    );
+    if (tags == null) return;
+    await _runLocal(
+      () => store.setTags(
+        clip.id,
+        tags.split(',').map((tag) => tag.trim().replaceFirst('#', '')).toSet(),
+      ),
+    );
+  }
+
   Future<void> _assignCollection(ClipItem clip) async {
     var value = clip.collection ?? '';
     final collection = await showDialog<String>(
@@ -666,6 +976,17 @@ class _ClipTownHomeState extends State<ClipTownHome> {
   }
 
   Future<void> _showPrivacySettings() async {
+    final launchAtLogin = desktopShell?.launchAtLogin;
+    bool? openAtLogin;
+    if (launchAtLogin != null) {
+      try {
+        openAtLogin = await launchAtLogin.isEnabled();
+      } on Object {
+        openAtLogin = null;
+      }
+      if (!mounted) return;
+    }
+    final initialOpenAtLogin = openAtLogin;
     var captureSensitive = store.captureLikelySensitive;
     var ignoredApplications = store.policy.ignoredApplications.join(', ');
     var historyLimit = store.policy.maxHistoryItems.toString();
@@ -680,6 +1001,18 @@ class _ClipTownHomeState extends State<ClipTownHome> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: <Widget>[
+                if (openAtLogin != null)
+                  SwitchListTile(
+                    key: const Key('open-at-login-toggle'),
+                    contentPadding: EdgeInsets.zero,
+                    value: openAtLogin!,
+                    onChanged: (value) =>
+                        setDialogState(() => openAtLogin = value),
+                    title: const Text('Open ClipTown at login'),
+                    subtitle: const Text(
+                      'Starts quietly in the tray so history is captured from the moment you log in.',
+                    ),
+                  ),
                 SwitchListTile(
                   key: const Key('capture-sensitive-toggle'),
                   contentPadding: EdgeInsets.zero,
@@ -750,6 +1083,13 @@ class _ClipTownHomeState extends State<ClipTownHome> {
       ),
     );
     if (result == null) return;
+    if (launchAtLogin != null &&
+        openAtLogin != null &&
+        openAtLogin != initialOpenAtLogin &&
+        !result.clearUnpinned) {
+      final enabled = openAtLogin!;
+      await _run(() => launchAtLogin.setEnabled(enabled));
+    }
     if (result.clearUnpinned) {
       await _runLocal(store.clearUnpinned);
       return;
@@ -803,7 +1143,12 @@ class _ClipTownHomeState extends State<ClipTownHome> {
 
 class _ClipCard extends StatelessWidget {
   const _ClipCard({
+    super.key,
     required this.clip,
+    required this.now,
+    required this.selected,
+    required this.onSelect,
+    this.quickCopyLabel,
     required this.queued,
     required this.onCopy,
     required this.onToggleQueued,
@@ -812,6 +1157,10 @@ class _ClipCard extends StatelessWidget {
   });
 
   final ClipItem clip;
+  final DateTime now;
+  final bool selected;
+  final VoidCallback onSelect;
+  final String? quickCopyLabel;
   final bool queued;
   final VoidCallback onCopy;
   final VoidCallback onToggleQueued;
@@ -820,143 +1169,179 @@ class _ClipCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
     return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            final details = Column(
-              key: Key('clip-${clip.id}'),
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Text(
-                  clip.title,
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  clip.summary,
-                  maxLines: 3,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const SizedBox(height: 8),
-                Wrap(
-                  spacing: 6,
-                  runSpacing: 4,
-                  children: <Widget>[
-                    _MetaChip(label: clip.kind.label),
-                    if (clip.collection case final collection?)
-                      _MetaChip(label: collection),
-                    if (clip.sourceApplication case final source?)
-                      _MetaChip(label: source),
-                    ...clip.tags.map((tag) => _MetaChip(label: '#$tag')),
-                  ],
-                ),
-              ],
-            );
-            final actions = <Widget>[
-              IconButton(
-                key: Key('copy-${clip.id}'),
-                tooltip: 'Copy ${clip.title}',
-                onPressed: onCopy,
-                icon: const Icon(Icons.copy),
-              ),
-              IconButton(
-                key: Key('queue-${clip.id}'),
-                tooltip: queued
-                    ? 'Remove from paste queue'
-                    : 'Add to paste queue',
-                onPressed: onToggleQueued,
-                icon: Icon(queued ? Icons.playlist_remove : Icons.playlist_add),
-              ),
-              IconButton(
-                key: Key('pin-${clip.id}'),
-                tooltip: clip.pinned
-                    ? 'Unpin ${clip.title}'
-                    : 'Pin ${clip.title}',
-                onPressed: onTogglePinned,
-                icon: Icon(
-                  clip.pinned ? Icons.push_pin : Icons.push_pin_outlined,
-                ),
-              ),
-              PopupMenuButton<_ClipAction>(
-                key: Key('actions-${clip.id}'),
-                tooltip: 'More actions',
-                onSelected: onAction,
-                itemBuilder: (context) => <PopupMenuEntry<_ClipAction>>[
-                  const PopupMenuItem(
-                    value: _ClipAction.rename,
-                    child: Text('Rename'),
-                  ),
-                  const PopupMenuItem(
-                    value: _ClipAction.collection,
-                    child: Text('Move to collection'),
-                  ),
-                  if (clip.text != null) ...<PopupMenuEntry<_ClipAction>>[
-                    const PopupMenuDivider(),
-                    const PopupMenuItem(
-                      value: _ClipAction.plainText,
-                      child: Text('Copy as plain text'),
-                    ),
-                    const PopupMenuItem(
-                      value: _ClipAction.trim,
-                      child: Text('Trim and copy'),
-                    ),
-                    const PopupMenuItem(
-                      value: _ClipAction.prettyJson,
-                      child: Text('Pretty-print JSON and copy'),
-                    ),
-                    const PopupMenuItem(
-                      value: _ClipAction.uppercase,
-                      child: Text('Uppercase and copy'),
-                    ),
-                    const PopupMenuItem(
-                      value: _ClipAction.lowercase,
-                      child: Text('Lowercase and copy'),
-                    ),
-                    const PopupMenuItem(
-                      value: _ClipAction.sortUniqueLines,
-                      child: Text('Sort unique lines and copy'),
-                    ),
-                  ],
-                  const PopupMenuDivider(),
-                  const PopupMenuItem(
-                    value: _ClipAction.delete,
-                    child: Text('Delete'),
-                  ),
-                ],
-              ),
-            ];
-            if (constraints.maxWidth < 560) {
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: selected
+            ? BorderSide(color: colors.primary, width: 1.5)
+            : BorderSide.none,
+      ),
+      color: selected ? const Color(0xff12223a) : null,
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onSelect,
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final details = Column(
+                key: Key('clip-${clip.id}'),
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: <Widget>[
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: <Widget>[
-                      _ClipPreview(clip: clip),
-                      const SizedBox(width: 12),
-                      Expanded(child: details),
-                    ],
+                  Text(
+                    clip.title,
+                    style: Theme.of(context).textTheme.titleMedium,
                   ),
                   const SizedBox(height: 4),
-                  Align(
-                    alignment: Alignment.centerRight,
-                    child: Wrap(spacing: 2, children: actions),
+                  ClipContentPreview(
+                    key: Key('clip-preview-${clip.id}'),
+                    text: clip.summary,
+                    style: clip.kind == ClipKind.code
+                        ? const TextStyle(fontFamily: 'monospace')
+                        : null,
+                  ),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 4,
+                    children: <Widget>[
+                      _MetaChip(label: clip.kind.label),
+                      if (clip.collection case final collection?)
+                        _MetaChip(label: collection),
+                      if (clip.sourceApplication case final source?)
+                        _MetaChip(label: source),
+                      ...clip.tags.map((tag) => _MetaChip(label: '#$tag')),
+                      _MetaChip(
+                        label: relativeTimeLabel(clip.sortTimestamp, now),
+                      ),
+                      _MetaChip(
+                        label: clipSizeLabel(
+                          text: clip.text,
+                          byteLength: clip.byteLength,
+                        ),
+                      ),
+                      if (quickCopyLabel case final shortcut?)
+                        _MetaChip(label: shortcut),
+                    ],
                   ),
                 ],
               );
-            }
-            return Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                _ClipPreview(clip: clip),
-                const SizedBox(width: 12),
-                Expanded(child: details),
-                ...actions,
-              ],
-            );
-          },
+              final actions = <Widget>[
+                IconButton(
+                  key: Key('copy-${clip.id}'),
+                  tooltip: 'Copy ${clip.title}',
+                  onPressed: onCopy,
+                  icon: const Icon(Icons.copy),
+                ),
+                IconButton(
+                  key: Key('queue-${clip.id}'),
+                  tooltip: queued
+                      ? 'Remove from paste queue'
+                      : 'Add to paste queue',
+                  onPressed: onToggleQueued,
+                  icon: Icon(
+                    queued ? Icons.playlist_remove : Icons.playlist_add,
+                  ),
+                ),
+                IconButton(
+                  key: Key('pin-${clip.id}'),
+                  tooltip: clip.pinned
+                      ? 'Unpin ${clip.title}'
+                      : 'Pin ${clip.title}',
+                  onPressed: onTogglePinned,
+                  icon: Icon(
+                    clip.pinned ? Icons.push_pin : Icons.push_pin_outlined,
+                  ),
+                ),
+                PopupMenuButton<_ClipAction>(
+                  key: Key('actions-${clip.id}'),
+                  tooltip: 'More actions',
+                  onSelected: onAction,
+                  itemBuilder: (context) => <PopupMenuEntry<_ClipAction>>[
+                    const PopupMenuItem(
+                      value: _ClipAction.rename,
+                      child: Text('Rename'),
+                    ),
+                    if (clip.text != null && clip.kind != ClipKind.files)
+                      const PopupMenuItem(
+                        value: _ClipAction.editText,
+                        child: Text('Edit text'),
+                      ),
+                    const PopupMenuItem(
+                      value: _ClipAction.tags,
+                      child: Text('Edit tags'),
+                    ),
+                    const PopupMenuItem(
+                      value: _ClipAction.collection,
+                      child: Text('Move to collection'),
+                    ),
+                    if (clip.text != null) ...<PopupMenuEntry<_ClipAction>>[
+                      const PopupMenuDivider(),
+                      const PopupMenuItem(
+                        value: _ClipAction.plainText,
+                        child: Text('Copy as plain text'),
+                      ),
+                      const PopupMenuItem(
+                        value: _ClipAction.trim,
+                        child: Text('Trim and copy'),
+                      ),
+                      const PopupMenuItem(
+                        value: _ClipAction.prettyJson,
+                        child: Text('Pretty-print JSON and copy'),
+                      ),
+                      const PopupMenuItem(
+                        value: _ClipAction.uppercase,
+                        child: Text('Uppercase and copy'),
+                      ),
+                      const PopupMenuItem(
+                        value: _ClipAction.lowercase,
+                        child: Text('Lowercase and copy'),
+                      ),
+                      const PopupMenuItem(
+                        value: _ClipAction.sortUniqueLines,
+                        child: Text('Sort unique lines and copy'),
+                      ),
+                    ],
+                    const PopupMenuDivider(),
+                    const PopupMenuItem(
+                      value: _ClipAction.delete,
+                      child: Text('Delete'),
+                    ),
+                  ],
+                ),
+              ];
+              if (constraints.maxWidth < 560) {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: <Widget>[
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        _ClipPreview(clip: clip),
+                        const SizedBox(width: 12),
+                        Expanded(child: details),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: Wrap(spacing: 2, children: actions),
+                    ),
+                  ],
+                );
+              }
+              return Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  _ClipPreview(clip: clip),
+                  const SizedBox(width: 12),
+                  Expanded(child: details),
+                  ...actions,
+                ],
+              );
+            },
+          ),
         ),
       ),
     );
@@ -970,6 +1355,20 @@ class _ClipPreview extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (clip.kind == ClipKind.color) {
+      if (parseHexColor(clip.text) case final swatch?) {
+        return Container(
+          key: Key('color-swatch-${clip.id}'),
+          width: 40,
+          height: 40,
+          decoration: BoxDecoration(
+            color: swatch,
+            shape: BoxShape.circle,
+            border: Border.all(color: Colors.white24, width: 2),
+          ),
+        );
+      }
+    }
     if (clip.kind == ClipKind.image && clip.dataBase64 != null) {
       return ClipRRect(
         borderRadius: BorderRadius.circular(8),
@@ -1063,7 +1462,7 @@ class _EmptyHistory extends StatelessWidget {
         Text(
           hasQuery
               ? 'Try a different search or clear a filter.'
-              : 'Copy something, use Capture now, or add a local clip.',
+              : 'Copy something and it appears here, or add a local clip.',
         ),
       ],
     ),
@@ -1072,6 +1471,8 @@ class _EmptyHistory extends StatelessWidget {
 
 enum _ClipAction {
   rename,
+  editText,
+  tags,
   collection,
   plainText,
   trim,

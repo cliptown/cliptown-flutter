@@ -332,6 +332,55 @@ class ClipStore extends ChangeNotifier {
     });
   });
 
+  /// Replaces the text of a text-like clip. The edited text goes through the
+  /// same size and likely-secret policy as captured text (but not the pause
+  /// switch: editing is an explicit user action). An auto-generated title is
+  /// regenerated; a title the user chose is kept.
+  Future<void> editText(String id, String text) => _enqueue(() async {
+    final index = _indexOf(id);
+    final existing = _clips[index];
+    if (existing.text == null || existing.kind == ClipKind.files) {
+      throw const FormatException('only text clips can be edited');
+    }
+    if (text == existing.text) return;
+    final snapshot = ClipboardSnapshot.text(
+      text: text,
+      sourceApplication: existing.sourceApplication,
+    );
+    final rejection = _policy.copyWith(captureEnabled: true).evaluate(snapshot);
+    if (rejection != null) {
+      _statusMessage = captureRejectionLabel(rejection);
+      notifyListeners();
+      throw FormatException(captureRejectionLabel(rejection));
+    }
+    final autoTitle =
+        existing.title ==
+        defaultClipTitle(
+          existing.kind,
+          text: existing.text,
+          fileUris: existing.fileUris,
+        );
+    final edited = ClipItem(
+      id: existing.id,
+      kind: snapshot.kind,
+      title: autoTitle
+          ? defaultClipTitle(snapshot.kind, text: text)
+          : existing.title,
+      text: text,
+      sourceApplication: existing.sourceApplication,
+      createdAt: existing.createdAt,
+      lastUsedAt: _clock().toUtc(),
+      pinned: existing.pinned,
+      collection: existing.collection,
+      tags: existing.tags,
+    );
+    edited.validate();
+    await _commit(() {
+      _clips[index] = edited;
+      _statusMessage = 'Clip updated';
+    });
+  });
+
   Future<void> delete(String id) => _enqueue(() async {
     await _commit(() {
       final index = _indexOf(id);

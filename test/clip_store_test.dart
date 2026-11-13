@@ -8,6 +8,41 @@ import 'package:flutter_test/flutter_test.dart';
 import 'test_support.dart';
 
 void main() {
+  test(
+    'editing text reclassifies, keeps metadata, and regenerates auto titles',
+    () async {
+      final store = await createDemoStore();
+      await store.setTags('security-notes', <String>{'ops'});
+      await store.editText('security-notes', 'https://cliptown.dev/docs');
+      final edited = store.itemById('security-notes');
+      expect(edited.text, 'https://cliptown.dev/docs');
+      expect(edited.kind, ClipKind.link);
+      expect(edited.tags, <String>{'ops'});
+      expect(edited.title, 'Security notes', reason: 'user titles are kept');
+      expect(
+        store.visibleClips[1].id,
+        'security-notes',
+        reason: 'edit counts as use',
+      );
+    },
+  );
+
+  test('editing rejects likely secrets and non-text clips', () async {
+    final store = await createDemoStore();
+    await expectLater(
+      store.editText(
+        'security-notes',
+        '-----BEGIN PRIVATE KEY-----\nabc\n-----END PRIVATE KEY-----',
+      ),
+      throwsFormatException,
+    );
+    expect(store.itemById('security-notes').text, startsWith('Random account'));
+    await expectLater(
+      store.editText('design-reference', 'x'),
+      throwsFormatException,
+    );
+  });
+
   test('pinned clips sort first and filters combine', () async {
     final store = await createDemoStore();
     expect(store.visibleClips.first.id, 'deploy-command');
