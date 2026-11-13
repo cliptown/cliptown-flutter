@@ -4,8 +4,15 @@ import 'package:cliptown_app/history/clip_item.dart';
 import 'package:cliptown_app/history/clip_repository.dart';
 import 'package:cliptown_app/src/clip_store.dart';
 
+/// Fixed instant the demo fixtures are authored against. Stores built from these
+/// fixtures must use [demoClock]; the wall clock would let retention pruning
+/// silently delete them once the fixtures are older than the retention window.
+final DateTime demoFixtureBase = DateTime.utc(2026, 8, 22, 12);
+
+DateTime demoClock() => demoFixtureBase.add(const Duration(hours: 1));
+
 List<ClipItem> demoClipItems() {
-  final base = DateTime.utc(2026, 8, 22, 12);
+  final base = demoFixtureBase;
   return <ClipItem>[
     ClipItem(
       id: 'deploy-command',
@@ -41,6 +48,7 @@ List<ClipItem> demoClipItems() {
 Future<ClipStore> createDemoStore() async {
   final store = ClipStore(
     repository: MemoryClipRepository(seed: demoClipItems()),
+    clock: demoClock,
   );
   await store.initialize();
   return store;
