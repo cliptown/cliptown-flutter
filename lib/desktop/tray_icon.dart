@@ -95,7 +95,7 @@ class TrayIconFlasher {
     final generation = ++_generation;
     _active += 1;
     try {
-      for (var pulse = 0; pulse < pulses; pulse += 1) {
+      for (final pulse in Iterable<int>.generate(pulses)) {
         if (generation != _generation) return;
         await port.setIcon(TrayIconVariant.highlight);
         await _delay(onDuration);

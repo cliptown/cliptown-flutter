@@ -38,7 +38,25 @@ class _FakeShell implements DesktopShell {
   void updateTrayMenu(DesktopTrayMenuModel model) => lastMenu = model;
 
   @override
-  LaunchAtLogin? get launchAtLogin => null;
+  LaunchAtLogin? launchAtLogin;
+}
+
+class _FakeLaunchAtLogin implements LaunchAtLogin {
+  _FakeLaunchAtLogin({this.failWith});
+
+  final Object? failWith;
+  bool enabled = false;
+  final List<bool> requests = <bool>[];
+
+  @override
+  Future<bool> isEnabled() async => enabled;
+
+  @override
+  Future<void> setEnabled(bool value) async {
+    requests.add(value);
+    if (failWith case final error?) throw error;
+    enabled = value;
+  }
 }
 
 class _Harness {
@@ -511,5 +529,47 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(find.textContaining('Alt+C shortcut unavailable'), findsOneWidget);
+  });
+
+  Future<void> toggleOpenAtLogin(WidgetTester tester) async {
+    await tester.tap(find.byKey(const Key('privacy-settings')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('open-at-login-toggle')), findsOneWidget);
+    await tester.tap(find.byKey(const Key('open-at-login-toggle')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Save'));
+    await tester.pumpAndSettle();
+  }
+
+  testWidgets('settings turn on open-at-login through the shell', (
+    tester,
+  ) async {
+    final h = await _pump(tester);
+    final login = _FakeLaunchAtLogin();
+    h.shell.launchAtLogin = login;
+    await toggleOpenAtLogin(tester);
+    expect(login.requests, <bool>[true]);
+    expect(login.enabled, isTrue);
+    expect(find.byKey(const Key('operation-failed-snackbar')), findsNothing);
+  });
+
+  testWidgets('macOS approval requirement is explained, not a generic error', (
+    tester,
+  ) async {
+    final h = await _pump(tester);
+    h.shell.launchAtLogin = _FakeLaunchAtLogin(
+      failWith: PlatformException(code: 'requires_approval'),
+    );
+    await toggleOpenAtLogin(tester);
+    expect(find.textContaining('Login Items'), findsOneWidget);
+  });
+
+  testWidgets('settings hide open-at-login where it is unsupported', (
+    tester,
+  ) async {
+    await _pump(tester);
+    await tester.tap(find.byKey(const Key('privacy-settings')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('open-at-login-toggle')), findsNothing);
   });
 }

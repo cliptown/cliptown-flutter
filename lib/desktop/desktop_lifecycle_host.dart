@@ -134,10 +134,9 @@ class DesktopLifecycleHost
     if (flashTray && _trayReady) unawaited(_flasher.flash());
     try {
       await controller.openMainWindow();
-    } on Object catch (error) {
+    } on Object {
       // Called from hotkey/tray callbacks that nobody awaits. The controller
       // already moved the state machine to its native-failure state.
-      debugPrint('ClipTown could not open its window: $error');
       return;
     }
     _summonCount.value += 1;

@@ -26,11 +26,12 @@ class TooltipAccelerator extends StatefulWidget {
 class _TooltipAcceleratorState extends State<TooltipAccelerator> {
   late final HardwareKeyboard _keyboard =
       widget.keyboard ?? HardwareKeyboard.instance;
-  late bool _accelerated = _keyboard.isAltPressed;
+  bool _accelerated = false;
 
   @override
   void initState() {
     super.initState();
+    _accelerated = _keyboard.isAltPressed;
     _keyboard.addHandler(_onKey);
   }
 

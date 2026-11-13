@@ -358,13 +358,9 @@ class _ClipTownHomeState extends State<ClipTownHome> {
 
   /// Copy, then get out of the way so the user can paste where they were.
   Future<void> _copyAndDismiss(ClipItem clip) async {
-    var copied = false;
-    await _run(() async {
-      await clipboardController.copy(clip);
-      copied = true;
-      return null;
-    });
-    if (copied) await desktopShell?.dismiss();
+    if (await _run(() => clipboardController.copy(clip))) {
+      await desktopShell?.dismiss();
+    }
   }
 
   void _copySelected() {
@@ -474,13 +470,9 @@ class _ClipTownHomeState extends State<ClipTownHome> {
         ),
         _searchFocus.requestFocus,
       ),
-      for (var index = 0; index < quickCopyKeys.length; index += 1)
+      for (final (index, key) in quickCopyKeys.indexed)
         _KeyBinding(
-          SingleActivator(
-            quickCopyKeys[index],
-            meta: _isApple,
-            control: !_isApple,
-          ),
+          SingleActivator(key, meta: _isApple, control: !_isApple),
           () => _copyAt(index),
         ),
     ];
@@ -501,12 +493,7 @@ class _ClipTownHomeState extends State<ClipTownHome> {
   /// Deletion is the one destructive action reachable from the keyboard, so
   /// it is always undoable.
   Future<void> _deleteWithUndo(ClipItem clip) async {
-    var deleted = false;
-    await _runLocal(() async {
-      await store.delete(clip.id);
-      deleted = true;
-      return null;
-    });
+    final deleted = await _runLocal(() => store.delete(clip.id));
     if (!deleted || !mounted) return;
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
@@ -1153,7 +1140,7 @@ class _ClipTownHomeState extends State<ClipTownHome> {
                   SwitchListTile(
                     key: const Key('open-at-login-toggle'),
                     contentPadding: EdgeInsets.zero,
-                    value: openAtLogin!,
+                    value: openAtLogin ?? false,
                     onChanged: (value) =>
                         setDialogState(() => openAtLogin = value),
                     title: const Text('Open ClipTown at login'),
@@ -1231,12 +1218,11 @@ class _ClipTownHomeState extends State<ClipTownHome> {
       ),
     );
     if (result == null) return;
-    if (launchAtLogin != null &&
-        openAtLogin != null &&
-        openAtLogin != initialOpenAtLogin &&
-        !result.clearUnpinned) {
-      final enabled = openAtLogin!;
-      await _run(() => launchAtLogin.setEnabled(enabled));
+    if ((launchAtLogin, openAtLogin) case (
+      final login?,
+      final enabled?,
+    ) when enabled != initialOpenAtLogin && !result.clearUnpinned) {
+      await _run(() => login.setEnabled(enabled));
     }
     if (result.clearUnpinned) {
       await _runLocal(store.clearUnpinned);
@@ -1258,13 +1244,14 @@ class _ClipTownHomeState extends State<ClipTownHome> {
     });
   }
 
-  Future<void> _runLocal(FutureOr<Object?> Function() action) async {
+  /// Like [_run], but only while local history may be touched.
+  Future<bool> _runLocal(FutureOr<Object?> Function() action) async {
     final authorizedRevision = stateMachine.state.revision;
     if (!stateMachine.state.permitsLocalWork) {
       store.setStatusMessage('Local history is locked in this app state');
-      return;
+      return false;
     }
-    await _run(() {
+    return _run(() {
       if (stateMachine.state.revision != authorizedRevision ||
           !stateMachine.state.permitsLocalWork) {
         throw StateError('stale local operation authorization');
@@ -1273,17 +1260,22 @@ class _ClipTownHomeState extends State<ClipTownHome> {
     });
   }
 
-  Future<void> _run(FutureOr<Object?> Function() action) async {
+  /// Runs [action]; on failure shows a user-safe message. Returns whether the
+  /// action completed.
+  Future<bool> _run(FutureOr<Object?> Function() action) async {
     try {
       await action();
+      return true;
     } on Object catch (error) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          key: const Key('operation-failed-snackbar'),
-          content: Text(userFacingFailure(error)),
-        ),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            key: const Key('operation-failed-snackbar'),
+            content: Text(userFacingFailure(error)),
+          ),
+        );
+      }
+      return false;
     }
   }
 }
