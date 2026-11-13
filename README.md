@@ -45,10 +45,10 @@ Current builds are ad-hoc signed (`scripts/build-macos-adhoc.sh`): they use `mac
 | ⌥C / Alt+C | system-wide | Open ClipTown with search focused; the tray icon flashes |
 | ⌥X / Alt+X | in ClipTown | Hide ClipTown to the tray (it keeps capturing) |
 | ↑ ↓, Page Up/Down | in ClipTown | Move the selection |
-| Return | in ClipTown | Copy the selected clip and hide, ready to paste |
+| Return | in ClipTown | Copy the selected clip and hide, ready to paste (a focused button gets Return instead) |
 | ⌘1…⌘9 / Ctrl+1…9 | in ClipTown | Copy that row and hide |
 | Esc | in ClipTown | Clear the search, then hide |
-| ⌥P / Alt+P, ⌥⌫ / Alt+Backspace | in ClipTown | Pin / delete the selected clip |
+| ⌥P / Alt+P, ⌥⌫ / Alt+Backspace | in ClipTown | Pin / delete the selected clip (⌥⌫ still deletes a word while the search has text; every delete can be undone) |
 | ⌘F / Ctrl+F | in ClipTown | Focus search |
 | hold ⌥ / Alt | in ClipTown | Show tooltips instantly while hovering (every control has one) |
 
