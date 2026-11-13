@@ -28,6 +28,33 @@ The independent native Rust/GPUI desktop client lives in [`cliptown-desktop.rs`]
 
 The sibling `cliptown-interfaces` checkout is required at `../cliptown-interfaces` for the generated Dart wire package.
 
+## Install on macOS
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/cliptown/cliptown-flutter/main/scripts/install-macos.sh | bash
+```
+
+The installer downloads the latest GitHub Release (`ClipTown-macos.zip`), verifies its SHA-256 checksum, and installs `ClipTown.app` into `/Applications` (or `~/Applications`). Add `-s -- --from-source` to clone this repository and the pinned `cliptown-interfaces` revision and build locally instead (needs Xcode, CocoaPods and Flutter); this is also the automatic fallback when no release has been published yet. Releases are produced by `.github/workflows/macos-release.yml` on `v*` tags.
+
+Current builds are ad-hoc signed (`scripts/build-macos-adhoc.sh`): they use `macos/Runner/AdHoc.entitlements` and keep the vault key in the encrypted login Keychain (`--dart-define=CLIPTOWN_MACOS_DATA_PROTECTION_KEYCHAIN=false`), because the data-protection Keychain requires a provisioned Developer ID signature. ClipTown runs fully locally — no account, login, or cloud service is needed.
+
+## Desktop shortcuts and tray
+
+| Keys (macOS / Windows, Linux) | Scope | Action |
+| --- | --- | --- |
+| ⌥C / Alt+C | system-wide | Open ClipTown with search focused; the tray icon flashes |
+| ⌥X / Alt+X | in ClipTown | Hide ClipTown to the tray (it keeps capturing) |
+| ↑ ↓, Page Up/Down | in ClipTown | Move the selection |
+| Return | in ClipTown | Copy the selected clip and hide, ready to paste |
+| ⌘1…⌘9 / Ctrl+1…9 | in ClipTown | Copy that row and hide |
+| Esc | in ClipTown | Clear the search, then hide |
+| ⌥P / Alt+P, ⌥⌫ / Alt+Backspace | in ClipTown | Pin / delete the selected clip |
+| ⌘F / Ctrl+F | in ClipTown | Focus search |
+
+Only ⌥C/Alt+C is global, so ClipTown never takes ⌥X or editing keys away from other apps. The tray (menu-bar) icon opens ClipTown on click and its menu lists the ten most recent clips (click to copy), pause/resume capture, and quit. **Open ClipTown at login** (Privacy and capture settings) starts it hidden in the tray via `SMAppService` on macOS 13+, the `HKCU\…\Run` key on Windows, and an XDG autostart entry on Linux.
+
+Clip text taller than a row is clipped; click it to scroll the full text inside the row, and the scrollbar disappears when the pointer leaves.
+
 ## Formally checked app state
 
 `lib/state/app_state_machine.dart` is the single transition authority for the
