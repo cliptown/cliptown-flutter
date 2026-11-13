@@ -28,15 +28,18 @@ class AppDelegate: FlutterAppDelegate {
           == OSType(keyAELaunchedAsLogInItem)
     }
     super.applicationWillFinishLaunching(notification)
+    if CommandLine.arguments.contains("--enable-open-at-login") {
+      // applicationDidFinishLaunching is not delivered to this delegate in the
+      // Flutter runner, so register on the next main-queue turn instead.
+      DispatchQueue.main.async { AppDelegate.registerAsLoginItem() }
+    }
   }
 
   /// `--enable-open-at-login` (passed by `install-macos.sh --open-at-login`)
   /// registers ClipTown as a login item, exactly like the in-app toggle.
   /// SMAppService only registers the calling app, so the installer cannot do
   /// this from outside.
-  override func applicationDidFinishLaunching(_ notification: Notification) {
-    super.applicationDidFinishLaunching(notification)
-    guard CommandLine.arguments.contains("--enable-open-at-login") else { return }
+  static func registerAsLoginItem() {
     if #available(macOS 13.0, *) {
       do {
         try SMAppService.mainApp.register()
