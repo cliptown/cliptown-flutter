@@ -159,8 +159,8 @@ class DesktopLifecycleHost
       await trayManager.setContextMenu(
         buildTrayMenu(_trayMenu, isMacOS: Platform.isMacOS),
       );
-    } on Object catch (error) {
-      debugPrint('ClipTown tray menu update failed: $error');
+    } on Object {
+      // The previous menu stays in place; the next store change retries.
     }
   }
 

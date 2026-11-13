@@ -109,12 +109,12 @@ String trayLabelForClip(ClipItem clip) {
     ClipKind.files => clip.summary,
     _ => (clip.text ?? clip.title),
   };
-  var label = source.replaceAll(RegExp(r'\s+'), ' ').trim();
-  if (label.isEmpty) label = clip.kind.label;
-  final characters = label.characters;
-  if (characters.length > _trayLabelMaxCharacters) {
-    label = '${characters.take(_trayLabelMaxCharacters - 1)}…';
-  }
+  final collapsed = source.replaceAll(RegExp(r'\s+'), ' ').trim();
+  final characters =
+      (collapsed.isEmpty ? clip.kind.label : collapsed).characters;
+  final label = characters.length > _trayLabelMaxCharacters
+      ? '${characters.take(_trayLabelMaxCharacters - 1)}…'
+      : characters.toString();
   return clip.pinned ? '★ $label' : label;
 }
 

@@ -103,8 +103,8 @@ class TrayIconFlasher {
         await port.setIcon(TrayIconVariant.normal);
         if (pulse < pulses - 1) await _delay(offDuration);
       }
-    } on Object catch (error) {
-      debugPrint('ClipTown tray flash failed: $error');
+    } on Object {
+      // Feedback only: a failed flash must never surface to the user.
       if (generation == _generation) {
         try {
           await port.setIcon(TrayIconVariant.normal);

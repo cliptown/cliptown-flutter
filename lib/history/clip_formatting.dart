@@ -36,10 +36,10 @@ Color? parseHexColor(String? value) {
     caseSensitive: false,
   ).firstMatch(value?.trim() ?? '');
   if (match == null) return null;
-  var hex = match.group(1)!;
-  if (hex.length <= 4) {
-    hex = hex.split('').map((digit) => '$digit$digit').join();
-  }
+  final digits = match.group(1)!;
+  final hex = digits.length <= 4
+      ? digits.split('').map((digit) => '$digit$digit').join()
+      : digits;
   final rgb = int.parse(hex.substring(0, 6), radix: 16);
   final alpha = hex.length == 8 ? int.parse(hex.substring(6), radix: 16) : 255;
   return Color((alpha << 24) | rgb);
