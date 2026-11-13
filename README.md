@@ -54,6 +54,8 @@ Current builds are ad-hoc signed (`scripts/build-macos-adhoc.sh`): they use `mac
 
 Only ⌥C/Alt+C is global, so ClipTown never takes ⌥X or editing keys away from other apps. The tray (menu-bar) icon opens ClipTown on click and its menu lists the ten most recent clips (click to copy), pause/resume capture, and quit. **Open ClipTown at login** (Privacy and capture settings) starts it hidden in the tray via `SMAppService` on macOS 13+, the `HKCU\…\Run` key on Windows, and an XDG autostart entry on Linux.
 
+On Linux, ClipTown adds itself to the app launcher (`~/.local/share/applications/cliptown.desktop`, with its icon) the first time it runs, and refreshes the entry if the bundle moves; Flatpak/Snap builds keep their own entry.
+
 Clip text taller than a row is clipped; click it to scroll the full text inside the row, and the scrollbar disappears when the pointer leaves.
 
 ## Formally checked app state

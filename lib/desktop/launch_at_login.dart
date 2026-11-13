@@ -173,19 +173,27 @@ class LinuxLaunchAtLogin implements LaunchAtLogin {
 
 /// Desktop Entry `Exec` quoting: the path is double-quoted and the reserved
 /// characters `"`, `` ` ``, `$` and `\` are backslash-escaped; `%` is doubled
-/// because it introduces field codes.
-String linuxAutostartEntry(String executable) {
-  final escaped = executable
+/// because it introduces field codes. Control characters (a newline would
+/// start a new key, e.g. a second `Exec=`) are rejected outright.
+String desktopEntryExecQuote(String path) {
+  if (path.isEmpty || RegExp(r'[\x00-\x1f\x7f]').hasMatch(path)) {
+    throw ArgumentError.value(path, 'path', 'unsafe for a desktop entry');
+  }
+  final escaped = path
       .replaceAll(r'\', r'\\')
       .replaceAll('"', r'\"')
       .replaceAll('`', r'\`')
       .replaceAll(r'$', r'\$')
       .replaceAll('%', '%%');
+  return '"$escaped"';
+}
+
+String linuxAutostartEntry(String executable) {
   return '[Desktop Entry]\n'
       'Type=Application\n'
       'Name=ClipTown\n'
       'Comment=Encrypted clipboard history\n'
-      'Exec="$escaped" $startHiddenArgument\n'
+      'Exec=${desktopEntryExecQuote(executable)} $startHiddenArgument\n'
       'Terminal=false\n'
       'X-GNOME-Autostart-enabled=true\n';
 }

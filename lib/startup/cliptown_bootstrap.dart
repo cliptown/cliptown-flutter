@@ -8,6 +8,7 @@ import '../clipboard/clipboard_service.dart';
 import '../cliptown_app.dart';
 import '../desktop/desktop_lifecycle_host.dart';
 import '../desktop/launch_at_login.dart';
+import '../desktop/linux_desktop_entry.dart';
 import '../history/clip_item.dart';
 import '../history/clip_repository.dart';
 import '../history/sqlite_clip_repository.dart';
@@ -78,6 +79,7 @@ Future<ClipTownStartupResources> bootstrapClipTownRuntime({
     var desktopBackgroundEnabled = false;
     var desktopHotKeyEnabled = false;
     if (isDesktop) {
+      unawaited(registerLinuxDesktopEntryForCurrentProcess());
       final candidate = DesktopLifecycleHost(
         stateMachine: stateMachine,
         startHidden: await launchedAtLogin(arguments),
