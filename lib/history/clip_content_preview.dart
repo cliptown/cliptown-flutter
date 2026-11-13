@@ -86,18 +86,23 @@ class _ClipContentPreviewState extends State<ClipContentPreview> {
         if (!_expanded) {
           return MouseRegion(
             cursor: SystemMouseCursors.click,
-            child: GestureDetector(
-              key: const Key('clip-preview-collapsed'),
-              behavior: HitTestBehavior.opaque,
-              onTap: _expand,
-              child: Semantics(
-                button: true,
-                onTapHint: 'scroll the full clip',
-                child: Text(
-                  text,
-                  maxLines: widget.collapsedLines,
-                  overflow: TextOverflow.ellipsis,
-                  style: style,
+            child: Tooltip(
+              message:
+                  'Click to scroll the whole clip here. Move the pointer '
+                  'away to collapse it again.',
+              child: GestureDetector(
+                key: const Key('clip-preview-collapsed'),
+                behavior: HitTestBehavior.opaque,
+                onTap: _expand,
+                child: Semantics(
+                  button: true,
+                  onTapHint: 'scroll the full clip',
+                  child: Text(
+                    text,
+                    maxLines: widget.collapsedLines,
+                    overflow: TextOverflow.ellipsis,
+                    style: style,
+                  ),
                 ),
               ),
             ),

@@ -6,6 +6,7 @@ import 'package:cliptown_app/desktop/launch_at_login.dart';
 import 'package:cliptown_app/history/clip_content_preview.dart';
 import 'package:cliptown_app/history/clip_item.dart';
 import 'package:cliptown_app/history/clip_repository.dart';
+import 'package:cliptown_app/history/clipboard_snapshot.dart';
 import 'package:cliptown_app/src/clip_store.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
@@ -104,13 +105,97 @@ void main() {
     expect(find.textContaining('Shift+V'), findsNothing);
   });
 
-  testWidgets('manual save is hidden while capture is automatic', (
+  OutlinedButton saveButton(WidgetTester tester) =>
+      tester.widget<OutlinedButton>(
+        find
+                .descendant(
+                  of: find.byKey(const Key('capture-now')),
+                  matching: find.byType(OutlinedButton),
+                )
+                .evaluate()
+                .isEmpty
+            ? find.byKey(const Key('capture-now'))
+            : find.descendant(
+                of: find.byKey(const Key('capture-now')),
+                matching: find.byType(OutlinedButton),
+              ),
+      );
+
+  String saveTooltip(WidgetTester tester) => tester
+      .widget<Tooltip>(find.byKey(const Key('capture-now-tooltip')))
+      .message!;
+
+  testWidgets('save button stays visible and greys out once the clipboard is '
+      'saved', (tester) async {
+    final h = await _pump(tester, automaticCapture: true);
+    expect(h.controller.monitoring, isTrue);
+    expect(find.byKey(const Key('capture-now')), findsOneWidget);
+    expect(saveButton(tester).onPressed, isNotNull);
+    expect(saveTooltip(tester), contains('saved automatically'));
+
+    await h.clipboard.emit(ClipboardSnapshot.text(text: 'fresh copy'));
+    await tester.pumpAndSettle();
+    expect(saveButton(tester).onPressed, isNull, reason: 'already saved');
+    expect(saveTooltip(tester), startsWith('Already saved'));
+
+    final savedId = h.store.clips
+        .firstWhere((clip) => clip.text == 'fresh copy')
+        .id;
+    await h.store.delete(savedId);
+    await tester.pumpAndSettle();
+    expect(
+      saveButton(tester).onPressed,
+      isNotNull,
+      reason: 'the saved clip was deleted, so saving again adds it back',
+    );
+  });
+
+  testWidgets('save button explains policy rejections and paused capture', (
     tester,
   ) async {
     final h = await _pump(tester, automaticCapture: true);
-    expect(h.controller.monitoring, isTrue);
-    expect(find.byKey(const Key('capture-now')), findsNothing);
-    expect(find.text('Capture now'), findsNothing);
+    await h.clipboard.emit(
+      ClipboardSnapshot.text(
+        text: '-----BEGIN PRIVATE KEY-----\nabc\n-----END PRIVATE KEY-----',
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(saveButton(tester).onPressed, isNull);
+    expect(saveTooltip(tester), contains('looks like a password'));
+
+    await tester.tap(find.byKey(const Key('capture-toggle')));
+    await tester.pumpAndSettle();
+    expect(saveButton(tester).onPressed, isNull);
+    expect(saveTooltip(tester), startsWith('Capture is paused'));
+  });
+
+  testWidgets('holding Alt/Option makes tooltips appear immediately', (
+    tester,
+  ) async {
+    await _pump(tester);
+    Duration? wait() => TooltipTheme.of(
+      tester.element(find.byKey(const Key('clip-search'))),
+    ).waitDuration;
+
+    expect(wait(), const Duration(milliseconds: 700));
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.altLeft);
+    await tester.pump();
+    expect(wait(), Duration.zero);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.altLeft);
+    await tester.pump();
+    expect(wait(), const Duration(milliseconds: 700));
+  });
+
+  testWidgets('every control on a clip row explains itself', (tester) async {
+    await _pump(tester);
+    for (final message in <String>[
+      'Detected content type. Filter by type above.',
+      'Size of this clip',
+      'Press Ctrl+1 to copy this clip and hide ClipTown',
+    ]) {
+      expect(find.byTooltip(message), findsWidgets, reason: message);
+    }
+    expect(find.byTooltip(RegExp(r'^Last copied ')), findsWidgets);
   });
 
   testWidgets('manual save sits with capture controls, not search', (

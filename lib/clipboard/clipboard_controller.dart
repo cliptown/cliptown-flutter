@@ -52,6 +52,72 @@ class ClipboardController extends ChangeNotifier {
 
   void _dispatchUi(ClipboardUiEvent event) => _ui.dispatch(event);
 
+  _ClipboardObservation? _lastObservation;
+
+  void _observe(String fingerprint, CaptureResult result) {
+    _lastObservation = _ClipboardObservation(
+      fingerprint: fingerprint,
+      savedClipId: result.accepted ? result.item?.id : null,
+      rejection: result.rejectionReason,
+    );
+    if (!_disposed) notifyListeners();
+  }
+
+  /// Whether "Save clipboard now" can do anything, and why not.
+  ///
+  /// Only trusted while automatic monitoring runs: without it the clipboard
+  /// may have changed since ClipTown last looked, so saving stays available.
+  ClipboardSaveStatus get saveStatus {
+    final state = stateMachine.state;
+    if (!state.permitsLocalWork) {
+      return const ClipboardSaveStatus(ClipboardSaveAvailability.locked);
+    }
+    if (!state.permitsCaptureWork) {
+      return const ClipboardSaveStatus(ClipboardSaveAvailability.paused);
+    }
+    if (busy) {
+      return const ClipboardSaveStatus(ClipboardSaveAvailability.saving);
+    }
+    final observation = _lastObservation;
+    if (!monitoring || observation == null) {
+      return ClipboardSaveStatus(
+        ClipboardSaveAvailability.available,
+        automatic: monitoring,
+      );
+    }
+    final savedId = observation.savedClipId;
+    if (savedId != null) {
+      final saved = store.clips.where((clip) => clip.id == savedId);
+      if (saved.isNotEmpty &&
+          saved.first.fingerprintMaterial == observation.fingerprint) {
+        return const ClipboardSaveStatus(
+          ClipboardSaveAvailability.alreadySaved,
+          automatic: true,
+        );
+      }
+      // The saved clip was deleted or edited: saving again is meaningful.
+      return const ClipboardSaveStatus(
+        ClipboardSaveAvailability.available,
+        automatic: true,
+      );
+    }
+    final rejection = observation.rejection;
+    if (rejection != null &&
+        rejection != CaptureRejectionReason.paused &&
+        rejection != CaptureRejectionReason.vaultUnavailable) {
+      // A manual save applies the same policy and would be refused again.
+      return ClipboardSaveStatus(
+        ClipboardSaveAvailability.rejected,
+        rejection: rejection,
+        automatic: true,
+      );
+    }
+    return const ClipboardSaveStatus(
+      ClipboardSaveAvailability.available,
+      automatic: true,
+    );
+  }
+
   Future<void> initialize() async {
     if (store.vaultLocked) {
       if (stateMachine.state.captureRequested) {
@@ -106,7 +172,9 @@ class ClipboardController extends ChangeNotifier {
       store.setStatusMessage('No supported clipboard content found');
       return const CaptureResult.rejected(CaptureRejectionReason.empty);
     }
-    return store.capture(clipboardSnapshot);
+    final result = await store.capture(clipboardSnapshot);
+    _observe(clipboardSnapshot.fingerprintMaterial, result);
+    return result;
   });
 
   Future<void> copy(ClipItem item, {TextTransform? transform}) =>
@@ -198,6 +266,7 @@ class ClipboardController extends ChangeNotifier {
           return;
         }
         final result = await store.capture(clipboardSnapshot);
+        _observe(clipboardSnapshot.fingerprintMaterial, result);
         if (!result.accepted &&
             result.rejectionReason == CaptureRejectionReason.vaultUnavailable) {
           stateMachine.dispatch(AppEvent.captureFailed);
@@ -305,4 +374,75 @@ class ClipboardController extends ChangeNotifier {
     if (_ownsStateMachine) stateMachine.dispose();
     super.dispose();
   }
+}
+
+@immutable
+class _ClipboardObservation {
+  const _ClipboardObservation({
+    required this.fingerprint,
+    required this.savedClipId,
+    required this.rejection,
+  });
+
+  final String fingerprint;
+  final String? savedClipId;
+  final CaptureRejectionReason? rejection;
+}
+
+enum ClipboardSaveAvailability {
+  available,
+  saving,
+  alreadySaved,
+  rejected,
+  paused,
+  locked,
+}
+
+/// State of the "Save clipboard now" control: enabled only when saving would
+/// add something, with a tooltip that says what it does and why it is off.
+@immutable
+class ClipboardSaveStatus {
+  const ClipboardSaveStatus(
+    this.availability, {
+    this.rejection,
+    this.automatic = false,
+  });
+
+  final ClipboardSaveAvailability availability;
+  final CaptureRejectionReason? rejection;
+
+  /// Automatic capture is watching the clipboard.
+  final bool automatic;
+
+  bool get enabled => availability == ClipboardSaveAvailability.available;
+
+  String get tooltip => switch (availability) {
+    ClipboardSaveAvailability.available =>
+      automatic
+          ? 'Save what is on your clipboard now. New copies are saved '
+                'automatically; use this for something copied before ClipTown '
+                'started or a clip you deleted.'
+          : 'Save what is on your clipboard now into your encrypted history.',
+    ClipboardSaveAvailability.saving => 'Saving your clipboard…',
+    ClipboardSaveAvailability.alreadySaved =>
+      'Already saved: what is on your clipboard is in your history. Copy '
+          'something new and it is saved automatically.',
+    ClipboardSaveAvailability.rejected => switch (rejection) {
+      CaptureRejectionReason.empty =>
+        'Nothing to save: the clipboard is empty or has an unsupported format.',
+      CaptureRejectionReason.likelySensitive =>
+        'Not saved: it looks like a password, key or code. Allow it under '
+            'Privacy and capture settings.',
+      CaptureRejectionReason.ignoredApplication =>
+        'Not saved: it came from an excluded application (Privacy and capture '
+            'settings).',
+      CaptureRejectionReason.tooLarge =>
+        'Not saved: it is larger than the per-item size limit.',
+      _ => 'Not saved by your capture policy.',
+    },
+    ClipboardSaveAvailability.paused =>
+      'Capture is paused. Turn capture on to save your clipboard.',
+    ClipboardSaveAvailability.locked =>
+      'Encrypted history is locked, so nothing can be saved.',
+  };
 }

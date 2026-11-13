@@ -17,6 +17,7 @@ import 'history/text_transform.dart';
 import 'proximity/nearby_share_page.dart';
 import 'src/clip_store.dart';
 import 'state/app_state_machine.dart';
+import 'ui/tooltip_accelerator.dart';
 
 class ClipTownApp extends StatefulWidget {
   const ClipTownApp({
@@ -143,6 +144,8 @@ class _ClipTownAppState extends State<ClipTownApp> with WidgetsBindingObserver {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       title: 'ClipTown',
+      builder: (context, child) =>
+          TooltipAccelerator(child: child ?? const SizedBox.shrink()),
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(
           seedColor: const Color(0xff42d3ff),
@@ -493,6 +496,9 @@ class _ClipTownHomeState extends State<ClipTownHome> {
         listenable: stateMachine,
         builder: (context, _) => FloatingActionButton.extended(
           key: const Key('add-manual-clip'),
+          tooltip:
+              'Type or paste a clip by hand. It is stored only in your '
+              'encrypted local history.',
           onPressed: stateMachine.state.permitsLocalWork
               ? _addManualClip
               : null,
@@ -618,7 +624,12 @@ class _ClipTownHomeState extends State<ClipTownHome> {
       autofocus: desktopShell != null,
       onChanged: _onQueryChanged,
       decoration: const InputDecoration(
-        prefixIcon: Icon(Icons.search),
+        prefixIcon: Tooltip(
+          message:
+              'Searches text, titles, tags, collections, source apps and '
+              'related meaning. Esc clears.',
+          child: Icon(Icons.search),
+        ),
         labelText: 'Search content, related text, tags, collections, and apps',
         helperText: '↑ ↓ to select • Return copies • Esc clears or hides',
       ),
@@ -635,77 +646,110 @@ class _ClipTownHomeState extends State<ClipTownHome> {
         FilterChip(
           key: const Key('pinned-only'),
           label: const Text('Pinned only'),
+          tooltip: store.pinnedOnly
+              ? 'Showing pinned clips only. Click to show everything.'
+              : 'Show only pinned clips. Pinned clips are never pruned by the '
+                    'history limit.',
           selected: store.pinnedOnly,
           onSelected: store.setPinnedOnly,
         ),
-        DropdownButton<ClipKind?>(
-          key: const Key('kind-filter'),
-          value: store.kindFilter,
-          hint: const Text('All types'),
-          items: <DropdownMenuItem<ClipKind?>>[
-            const DropdownMenuItem<ClipKind?>(
-              value: null,
-              child: Text('All types'),
-            ),
-            ...ClipKind.values.map(
-              (kind) => DropdownMenuItem<ClipKind?>(
-                value: kind,
-                child: Text(kind.label),
-              ),
-            ),
-          ],
-          onChanged: store.setKindFilter,
-        ),
-        if (collectionValues.isNotEmpty)
-          DropdownButton<String?>(
-            key: const Key('collection-filter'),
-            value: store.collectionFilter,
-            hint: const Text('All collections'),
-            items: <DropdownMenuItem<String?>>[
-              const DropdownMenuItem<String?>(
+        Tooltip(
+          message: 'Filter history by content type',
+          child: DropdownButton<ClipKind?>(
+            key: const Key('kind-filter'),
+            value: store.kindFilter,
+            hint: const Text('All types'),
+            items: <DropdownMenuItem<ClipKind?>>[
+              const DropdownMenuItem<ClipKind?>(
                 value: null,
-                child: Text('All collections'),
+                child: Text('All types'),
               ),
-              ...collectionValues.map(
-                (value) =>
-                    DropdownMenuItem<String?>(value: value, child: Text(value)),
+              ...ClipKind.values.map(
+                (kind) => DropdownMenuItem<ClipKind?>(
+                  value: kind,
+                  child: Text(kind.label),
+                ),
               ),
             ],
-            onChanged: store.setCollectionFilter,
+            onChanged: store.setKindFilter,
           ),
-        const SizedBox(width: 4),
-        Switch(
-          key: const Key('capture-toggle'),
-          value: stateMachine.state.captureRequested,
-          onChanged:
-              !stateMachine.state.permitsLocalWork &&
-                  !stateMachine.state.captureRequested
-              ? null
-              : (value) =>
-                    _run(() => clipboardController.setCaptureEnabled(value)),
         ),
-        Text(
-          stateMachine.state.captureRequested ? 'Capture on' : 'Capture off',
-        ),
-        // Desktop capture is automatic; a manual "save what is on the clipboard
-        // now" only matters where nothing is watching the clipboard (mobile, or
-        // a desktop without a clipboard watcher). It lives with the capture
-        // controls, not next to search, so it is not mistaken for a search action.
-        if (!clipboardController.monitoring &&
-            stateMachine.state.permitsCaptureWork)
+        if (collectionValues.isNotEmpty)
           Tooltip(
-            message:
-                'Save whatever is on the system clipboard right now into history',
-            child: OutlinedButton.icon(
-              key: const Key('capture-now'),
-              onPressed: clipboardController.busy
-                  ? null
-                  : () => _run(clipboardController.captureNow),
-              icon: const Icon(Icons.content_paste_go, size: 18),
-              label: const Text('Save clipboard now'),
+            message: 'Filter history by collection',
+            child: DropdownButton<String?>(
+              key: const Key('collection-filter'),
+              value: store.collectionFilter,
+              hint: const Text('All collections'),
+              items: <DropdownMenuItem<String?>>[
+                const DropdownMenuItem<String?>(
+                  value: null,
+                  child: Text('All collections'),
+                ),
+                ...collectionValues.map(
+                  (value) => DropdownMenuItem<String?>(
+                    value: value,
+                    child: Text(value),
+                  ),
+                ),
+              ],
+              onChanged: store.setCollectionFilter,
             ),
           ),
+        const SizedBox(width: 4),
+        Tooltip(
+          message: stateMachine.state.captureRequested
+              ? 'Capture is on: everything you copy is saved to your encrypted '
+                    'history (likely secrets are skipped). Switch off to pause.'
+              : 'Capture is paused: nothing you copy is saved. Existing history '
+                    'stays searchable. Switch on to resume.',
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              Switch(
+                key: const Key('capture-toggle'),
+                value: stateMachine.state.captureRequested,
+                onChanged:
+                    !stateMachine.state.permitsLocalWork &&
+                        !stateMachine.state.captureRequested
+                    ? null
+                    : (value) => _run(
+                        () => clipboardController.setCaptureEnabled(value),
+                      ),
+              ),
+              Text(
+                stateMachine.state.captureRequested
+                    ? 'Capture on'
+                    : 'Capture off',
+              ),
+            ],
+          ),
+        ),
+        _buildSaveClipboardButton(),
       ],
+    );
+  }
+
+  /// Always visible next to the capture controls (not the search row, where it
+  /// read as a search action). Greyed out whenever saving would do nothing; the
+  /// tooltip says what it does and why it is unavailable.
+  Widget _buildSaveClipboardButton() {
+    final status = clipboardController.saveStatus;
+    final saved = status.availability == ClipboardSaveAvailability.alreadySaved;
+    return Tooltip(
+      key: const Key('capture-now-tooltip'),
+      message: status.tooltip,
+      child: OutlinedButton.icon(
+        key: const Key('capture-now'),
+        onPressed: status.enabled
+            ? () => _run(clipboardController.captureNow)
+            : null,
+        icon: Icon(
+          saved ? Icons.check_circle_outline : Icons.content_paste_go,
+          size: 18,
+        ),
+        label: const Text('Save clipboard now'),
+      ),
     );
   }
 
@@ -723,11 +767,16 @@ class _ClipTownHomeState extends State<ClipTownHome> {
                 '${store.queueLength} item${store.queueLength == 1 ? '' : 's'} in the paste queue',
               ),
             ),
-            FilledButton.tonalIcon(
-              key: const Key('copy-next-queued'),
-              onPressed: () => _run(clipboardController.copyNextQueued),
-              icon: const Icon(Icons.skip_next),
-              label: const Text('Copy next'),
+            Tooltip(
+              message:
+                  'Copy the next queued clip to the clipboard (in the order '
+                  'you queued them), then paste it wherever you need it.',
+              child: FilledButton.tonalIcon(
+                key: const Key('copy-next-queued'),
+                onPressed: () => _run(clipboardController.copyNextQueued),
+                icon: const Icon(Icons.skip_next),
+                label: const Text('Copy next'),
+              ),
             ),
           ],
         ),
@@ -1206,23 +1255,47 @@ class _ClipCard extends StatelessWidget {
                     spacing: 6,
                     runSpacing: 4,
                     children: <Widget>[
-                      _MetaChip(label: clip.kind.label),
+                      _MetaChip(
+                        label: clip.kind.label,
+                        tooltip: 'Detected content type. Filter by type above.',
+                      ),
                       if (clip.collection case final collection?)
-                        _MetaChip(label: collection),
+                        _MetaChip(
+                          label: collection,
+                          tooltip:
+                              'Collection. Change it with ⋯ → Move to collection.',
+                        ),
                       if (clip.sourceApplication case final source?)
-                        _MetaChip(label: source),
-                      ...clip.tags.map((tag) => _MetaChip(label: '#$tag')),
+                        _MetaChip(
+                          label: source,
+                          tooltip: 'Application this was copied from',
+                        ),
+                      ...clip.tags.map(
+                        (tag) => _MetaChip(
+                          label: '#$tag',
+                          tooltip:
+                              'Tag. Search for it, or change tags with ⋯ → Edit tags.',
+                        ),
+                      ),
                       _MetaChip(
                         label: relativeTimeLabel(clip.sortTimestamp, now),
+                        tooltip:
+                            'Last copied ${_formatTimestamp(clip.sortTimestamp)}\n'
+                            'First saved ${_formatTimestamp(clip.createdAt)}',
                       ),
                       _MetaChip(
                         label: clipSizeLabel(
                           text: clip.text,
                           byteLength: clip.byteLength,
                         ),
+                        tooltip: 'Size of this clip',
                       ),
                       if (quickCopyLabel case final shortcut?)
-                        _MetaChip(label: shortcut),
+                        _MetaChip(
+                          label: shortcut,
+                          tooltip:
+                              'Press $shortcut to copy this clip and hide ClipTown',
+                        ),
                     ],
                   ),
                 ],
@@ -1357,14 +1430,17 @@ class _ClipPreview extends StatelessWidget {
   Widget build(BuildContext context) {
     if (clip.kind == ClipKind.color) {
       if (parseHexColor(clip.text) case final swatch?) {
-        return Container(
-          key: Key('color-swatch-${clip.id}'),
-          width: 40,
-          height: 40,
-          decoration: BoxDecoration(
-            color: swatch,
-            shape: BoxShape.circle,
-            border: Border.all(color: Colors.white24, width: 2),
+        return Tooltip(
+          message: 'Colour ${clip.text?.trim()}',
+          child: Container(
+            key: Key('color-swatch-${clip.id}'),
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: swatch,
+              shape: BoxShape.circle,
+              border: Border.all(color: Colors.white24, width: 2),
+            ),
           ),
         );
       }
@@ -1377,30 +1453,45 @@ class _ClipPreview extends StatelessWidget {
           width: 56,
           height: 56,
           fit: BoxFit.cover,
-          errorBuilder: (_, _, _) => const _KindAvatar(label: 'I'),
+          errorBuilder: (_, _, _) =>
+              const _KindAvatar(label: 'I', tooltip: 'Image'),
         ),
       );
     }
-    return _KindAvatar(label: clip.kind.label.characters.first);
+    return _KindAvatar(
+      label: clip.kind.label.characters.first,
+      tooltip: clip.kind.label,
+    );
   }
 }
 
 class _KindAvatar extends StatelessWidget {
-  const _KindAvatar({required this.label});
+  const _KindAvatar({required this.label, required this.tooltip});
 
   final String label;
+  final String tooltip;
 
   @override
-  Widget build(BuildContext context) => CircleAvatar(child: Text(label));
+  Widget build(BuildContext context) => Tooltip(
+    message: tooltip,
+    child: CircleAvatar(child: Text(label)),
+  );
 }
 
 class _MetaChip extends StatelessWidget {
-  const _MetaChip({required this.label});
+  const _MetaChip({required this.label, this.tooltip});
 
   final String label;
+  final String? tooltip;
 
   @override
-  Widget build(BuildContext context) => DecoratedBox(
+  Widget build(BuildContext context) {
+    final chip = _chip(context);
+    final message = tooltip;
+    return message == null ? chip : Tooltip(message: message, child: chip);
+  }
+
+  Widget _chip(BuildContext context) => DecoratedBox(
     decoration: BoxDecoration(
       color: Theme.of(context).colorScheme.surfaceContainerHighest,
       borderRadius: BorderRadius.circular(999),
@@ -1419,21 +1510,28 @@ class _StatusBanner extends StatelessWidget {
   final bool isError;
 
   @override
-  Widget build(BuildContext context) => DecoratedBox(
-    decoration: BoxDecoration(
-      color: isError ? const Color(0xff4a1721) : const Color(0xff10243a),
-      borderRadius: BorderRadius.circular(10),
-    ),
-    child: Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
-      child: Row(
-        children: <Widget>[
-          Icon(isError ? Icons.lock : Icons.privacy_tip_outlined, size: 18),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(message, key: const Key('capture-status-message')),
-          ),
-        ],
+  Widget build(BuildContext context) => Tooltip(
+    message: isError
+        ? 'Something needs attention. Clipboard contents are never shown in '
+              'errors.'
+        : 'What ClipTown last did with your clipboard. History is encrypted '
+              'on this device.',
+    child: DecoratedBox(
+      decoration: BoxDecoration(
+        color: isError ? const Color(0xff4a1721) : const Color(0xff10243a),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+        child: Row(
+          children: <Widget>[
+            Icon(isError ? Icons.lock : Icons.privacy_tip_outlined, size: 18),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(message, key: const Key('capture-status-message')),
+            ),
+          ],
+        ),
       ),
     ),
   );
@@ -1495,4 +1593,11 @@ class _PrivacySettingsResult {
   final String? ignoredApplications;
   final int? historyLimit;
   final bool clearUnpinned;
+}
+
+String _formatTimestamp(DateTime timestamp) {
+  final local = timestamp.toLocal();
+  String two(int value) => value.toString().padLeft(2, '0');
+  return '${local.year}-${two(local.month)}-${two(local.day)} '
+      '${two(local.hour)}:${two(local.minute)}';
 }

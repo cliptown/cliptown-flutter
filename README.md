@@ -50,6 +50,7 @@ Current builds are ad-hoc signed (`scripts/build-macos-adhoc.sh`): they use `mac
 | Esc | in ClipTown | Clear the search, then hide |
 | ⌥P / Alt+P, ⌥⌫ / Alt+Backspace | in ClipTown | Pin / delete the selected clip |
 | ⌘F / Ctrl+F | in ClipTown | Focus search |
+| hold ⌥ / Alt | in ClipTown | Show tooltips instantly while hovering (every control has one) |
 
 Only ⌥C/Alt+C is global, so ClipTown never takes ⌥X or editing keys away from other apps. The tray (menu-bar) icon opens ClipTown on click and its menu lists the ten most recent clips (click to copy), pause/resume capture, and quit. **Open ClipTown at login** (Privacy and capture settings) starts it hidden in the tray via `SMAppService` on macOS 13+, the `HKCU\…\Run` key on Windows, and an XDG autostart entry on Linux.
 
