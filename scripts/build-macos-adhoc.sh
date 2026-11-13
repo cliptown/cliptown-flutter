@@ -14,8 +14,16 @@ entitlements="$root/macos/Runner/Release.entitlements"
 backup="$(mktemp "${TMPDIR:-/tmp}/cliptown-release-entitlements.XXXXXX")"
 
 cp "$entitlements" "$backup"
-restore() { cp "$backup" "$entitlements"; rm -f "$backup"; }
+restored=0
+restore() {
+  [ "$restored" -eq 0 ] || return 0
+  cp "$backup" "$entitlements" && rm -f "$backup" && restored=1
+}
+# Restore on every exit path, including Ctrl-C and kill, so the tracked
+# Release.entitlements is never left swapped.
 trap restore EXIT
+trap 'restore; exit 130' INT
+trap 'restore; exit 143' TERM
 cp "$root/macos/Runner/AdHoc.entitlements" "$entitlements"
 
 cd "$root"
