@@ -41,6 +41,7 @@ Usage: install-macos.sh [--from-source [--ref <ref>]] [--version <tag>] [--dest 
   --version <tag>  install a specific release tag
   --dest <dir>     install directory (default: /Applications, else ~/Applications)
   --no-launch      do not open ClipTown afterwards
+  --open-at-login  also start ClipTown automatically when you log in (macOS 13+)
 EOF
 }
 
@@ -126,6 +127,7 @@ main() {
   version=""
   dest=""
   launch=1
+  open_at_login=0
 
   while [ $# -gt 0 ]; do
     case "$1" in
@@ -134,6 +136,7 @@ main() {
       --version) [ $# -ge 2 ] || die "--version needs a value"; version="$2"; shift ;;
       --dest) [ $# -ge 2 ] || die "--dest needs a value"; dest="$2"; shift ;;
       --no-launch) launch=0 ;;
+      --open-at-login) open_at_login=1 ;;
       -h|--help) usage; exit 0 ;;
       *) die "unknown option: $1 (see --help)" ;;
     esac
@@ -167,7 +170,14 @@ main() {
     die "refusing to install: the bundle is not $BUNDLE_ID"
 
   if [ -z "$dest" ]; then
-    if [ -w /Applications ]; then dest="/Applications"; else dest="$HOME/Applications"; fi
+    # Upgrade an existing install in place rather than creating a second copy.
+    if [ "$(bundle_id_of "$HOME/Applications/$APP_NAME")" = "$BUNDLE_ID" ]; then
+      dest="$HOME/Applications"
+    elif [ -w /Applications ]; then
+      dest="/Applications"
+    else
+      dest="$HOME/Applications"
+    fi
   fi
   mkdir -p "$dest"
   target="$dest/$APP_NAME"
@@ -199,8 +209,15 @@ main() {
 
   say "ClipTown installed."
   echo "    Open it any time with Option+C. It lives in the menu bar; Option+X hides it."
-  echo "    Turn on 'Open ClipTown at login' in its Privacy and capture settings."
-  if [ "$launch" -eq 1 ]; then open "$target"; fi
+  if [ "$open_at_login" -eq 1 ]; then
+    # SMAppService can only register the app that calls it, so ClipTown
+    # registers itself on this launch.
+    open "$target" --args --enable-open-at-login
+    echo "    ClipTown will start automatically when you log in (System Settings > General > Login Items)."
+  else
+    echo "    Turn on 'Open ClipTown at login' in its Privacy and capture settings."
+    if [ "$launch" -eq 1 ]; then open "$target"; fi
+  fi
 }
 
 main "$@"

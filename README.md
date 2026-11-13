@@ -34,6 +34,8 @@ The sibling `cliptown-interfaces` checkout is required at `../cliptown-interface
 curl -fsSL https://raw.githubusercontent.com/cliptown/cliptown-flutter/main/scripts/install-macos.sh | bash
 ```
 
+Add `-s -- --open-at-login` to also start ClipTown automatically when you log in (macOS 13+; ClipTown registers itself as a login item and starts hidden in the menu bar).
+
 The installer downloads the latest GitHub Release (`ClipTown-macos.zip`), verifies its SHA-256 checksum, and installs `ClipTown.app` into `/Applications` (or `~/Applications`). Add `-s -- --from-source` to clone this repository and the pinned `cliptown-interfaces` revision and build locally instead (needs Xcode, CocoaPods and Flutter); this is also the automatic fallback when no release has been published yet. Releases are produced by `.github/workflows/macos-release.yml` on `v*` tags.
 
 Current builds are ad-hoc signed (`scripts/build-macos-adhoc.sh`): they use `macos/Runner/AdHoc.entitlements` and keep the vault key in the encrypted login Keychain (`--dart-define=CLIPTOWN_MACOS_DATA_PROTECTION_KEYCHAIN=false`), because the data-protection Keychain requires a provisioned Developer ID signature. ClipTown runs fully locally — no account, login, or cloud service is needed.

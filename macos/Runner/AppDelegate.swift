@@ -1,5 +1,11 @@
 import Cocoa
 import FlutterMacOS
+import ServiceManagement
+
+enum ClipTownTray {
+  /// Distance (points) from the right edge of the menu bar.
+  static let preferredPosition: Double = 470
+}
 
 @main
 class AppDelegate: FlutterAppDelegate {
@@ -8,6 +14,13 @@ class AppDelegate: FlutterAppDelegate {
   static var launchedAsLoginItem = false
 
   override func applicationWillFinishLaunching(_ notification: Notification) {
+    // New menu-bar items are placed at the far left of the status area, which
+    // on a crowded notched display is hidden behind the notch. Prefer a slot
+    // near the system icons instead. This is only a registered default: once
+    // the user Cmd-drags the icon, macOS persists their choice and it wins.
+    UserDefaults.standard.register(defaults: [
+      "NSStatusItem Preferred Position Item-0": ClipTownTray.preferredPosition
+    ])
     if let event = NSAppleEventManager.shared().currentAppleEvent {
       AppDelegate.launchedAsLoginItem =
         event.eventID == AEEventID(kAEOpenApplication)
@@ -15,6 +28,25 @@ class AppDelegate: FlutterAppDelegate {
           == OSType(keyAELaunchedAsLogInItem)
     }
     super.applicationWillFinishLaunching(notification)
+  }
+
+  /// `--enable-open-at-login` (passed by `install-macos.sh --open-at-login`)
+  /// registers ClipTown as a login item, exactly like the in-app toggle.
+  /// SMAppService only registers the calling app, so the installer cannot do
+  /// this from outside.
+  override func applicationDidFinishLaunching(_ notification: Notification) {
+    super.applicationDidFinishLaunching(notification)
+    guard CommandLine.arguments.contains("--enable-open-at-login") else { return }
+    if #available(macOS 13.0, *) {
+      do {
+        try SMAppService.mainApp.register()
+        if SMAppService.mainApp.status == .requiresApproval {
+          SMAppService.openSystemSettingsLoginItems()
+        }
+      } catch {
+        NSLog("ClipTown could not register as a login item: %@", error.localizedDescription)
+      }
+    }
   }
 
   override func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
