@@ -142,7 +142,7 @@ void main() {
       final autostart = Directory('${dir.path}/autostart')..createSync();
       File(
         '${autostart.path}/cliptown.desktop',
-      ).writeAsStringSync(linuxAutostartEntry('/old/cliptown_app'));
+      ).writeAsStringSync(linuxAutostartEntry('/old/cliptown_app')!);
       final login = LinuxLaunchAtLogin(
         autostartDirectory: autostart.path,
         executable: '/opt/cliptown/cliptown_app',

@@ -15,21 +15,27 @@ const List<String> _bundledIconPath = <String>[
 
 /// XDG application entry so desktop launchers (GNOME Activities, KDE,
 /// app menus) can find ClipTown by name, show its icon, and match its window.
-String linuxApplicationEntry({
+/// Null when a path cannot be written safely into a desktop entry.
+String? linuxApplicationEntry({
   required String executable,
   required String iconPath,
-}) =>
-    '[Desktop Entry]\n'
-    'Type=Application\n'
-    'Name=ClipTown\n'
-    'GenericName=Clipboard history\n'
-    'Comment=Encrypted, searchable clipboard history\n'
-    'Exec=${desktopEntryExecQuote(executable)}\n'
-    'Icon=$iconPath\n'
-    'Terminal=false\n'
-    'Categories=Utility;\n'
-    'Keywords=clipboard;history;paste;copy;snippets;\n'
-    'StartupWMClass=cliptown_app\n';
+}) {
+  final exec = desktopEntryExecQuote(executable);
+  if (exec == null || RegExp(r'[\x00-\x1f\x7f]').hasMatch(iconPath)) {
+    return null;
+  }
+  return '[Desktop Entry]\n'
+      'Type=Application\n'
+      'Name=ClipTown\n'
+      'GenericName=Clipboard history\n'
+      'Comment=Encrypted, searchable clipboard history\n'
+      'Exec=$exec\n'
+      'Icon=$iconPath\n'
+      'Terminal=false\n'
+      'Categories=Utility;\n'
+      'Keywords=clipboard;history;paste;copy;snippets;\n'
+      'StartupWMClass=cliptown_app\n';
+}
 
 /// Registers ClipTown with the desktop launcher on Linux.
 ///
@@ -40,7 +46,7 @@ String linuxApplicationEntry({
 Future<bool> registerLinuxDesktopEntry({
   required String executable,
   required String applicationsDirectory,
-  Map<String, String> environment = const <String, String>{},
+  required Map<String, String> environment,
 }) async {
   if (environment.containsKey('FLATPAK_ID') ||
       environment.containsKey('SNAP')) {
@@ -48,16 +54,11 @@ Future<bool> registerLinuxDesktopEntry({
   }
   final bundleDirectory = File(executable).parent.path;
   final iconPath = <String>[bundleDirectory, ..._bundledIconPath].join('/');
-  if (RegExp(r'[\x00-\x1f\x7f]').hasMatch(iconPath)) return false;
-  final String contents;
-  try {
-    contents = linuxApplicationEntry(
-      executable: executable,
-      iconPath: iconPath,
-    );
-  } on ArgumentError {
-    return false;
-  }
+  final contents = linuxApplicationEntry(
+    executable: executable,
+    iconPath: iconPath,
+  );
+  if (contents == null) return false;
   final entry = File('$applicationsDirectory/$_desktopFileName');
   try {
     if (await entry.readAsString() == contents) return false;

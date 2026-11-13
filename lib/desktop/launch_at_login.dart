@@ -163,10 +163,13 @@ class LinuxLaunchAtLogin implements LaunchAtLogin {
       if (await _entry.exists()) await _entry.delete();
       return;
     }
+    final contents = linuxAutostartEntry(executable);
+    // An unsafe install path is never written; isEnabled keeps reporting off.
+    if (contents == null) return;
     await Directory(autostartDirectory).create(recursive: true);
     // Write-then-rename so a crash never leaves a truncated autostart entry.
     final staging = File('${_entry.path}.tmp');
-    await staging.writeAsString(linuxAutostartEntry(executable), flush: true);
+    await staging.writeAsString(contents, flush: true);
     await staging.rename(_entry.path);
   }
 }
@@ -174,11 +177,9 @@ class LinuxLaunchAtLogin implements LaunchAtLogin {
 /// Desktop Entry `Exec` quoting: the path is double-quoted and the reserved
 /// characters `"`, `` ` ``, `$` and `\` are backslash-escaped; `%` is doubled
 /// because it introduces field codes. Control characters (a newline would
-/// start a new key, e.g. a second `Exec=`) are rejected outright.
-String desktopEntryExecQuote(String path) {
-  if (path.isEmpty || RegExp(r'[\x00-\x1f\x7f]').hasMatch(path)) {
-    throw ArgumentError.value(path, 'path', 'unsafe for a desktop entry');
-  }
+/// start a new key, e.g. a second `Exec=`) make the path unusable: null.
+String? desktopEntryExecQuote(String path) {
+  if (path.isEmpty || RegExp(r'[\x00-\x1f\x7f]').hasMatch(path)) return null;
   final escaped = path
       .replaceAll(r'\', r'\\')
       .replaceAll('"', r'\"')
@@ -188,12 +189,15 @@ String desktopEntryExecQuote(String path) {
   return '"$escaped"';
 }
 
-String linuxAutostartEntry(String executable) {
+/// Null when [executable] cannot be written safely into a desktop entry.
+String? linuxAutostartEntry(String executable) {
+  final exec = desktopEntryExecQuote(executable);
+  if (exec == null) return null;
   return '[Desktop Entry]\n'
       'Type=Application\n'
       'Name=ClipTown\n'
       'Comment=Encrypted clipboard history\n'
-      'Exec=${desktopEntryExecQuote(executable)} $startHiddenArgument\n'
+      'Exec=$exec $startHiddenArgument\n'
       'Terminal=false\n'
       'X-GNOME-Autostart-enabled=true\n';
 }

@@ -20,6 +20,7 @@ void main() {
     final wrote = await registerLinuxDesktopEntry(
       executable: '/opt/ClipTown/cliptown_app',
       applicationsDirectory: applications,
+      environment: const <String, String>{},
     );
     expect(wrote, isTrue);
     final text = entry().readAsStringSync();
@@ -41,6 +42,7 @@ void main() {
       Future<bool> register(String exe) => registerLinuxDesktopEntry(
         executable: exe,
         applicationsDirectory: applications,
+        environment: const <String, String>{},
       );
       expect(await register('/opt/a/cliptown_app'), isTrue);
       expect(await register('/opt/a/cliptown_app'), isFalse);
@@ -78,15 +80,14 @@ void main() {
       await registerLinuxDesktopEntry(
         executable: '/opt/x\nExec=/tmp/evil/cliptown_app',
         applicationsDirectory: applications,
+        environment: const <String, String>{},
       ),
       isFalse,
     );
     expect(entry().existsSync(), isFalse);
-    expect(
-      () => linuxAutostartEntry('/opt/x\nExec=/tmp/evil'),
-      throwsArgumentError,
-    );
-    expect(() => desktopEntryExecQuote(''), throwsArgumentError);
+    expect(linuxAutostartEntry('/opt/x\nExec=/tmp/evil'), isNull);
+    expect(desktopEntryExecQuote(''), isNull);
+    expect(desktopEntryExecQuote(r'/a b/$x'), r'"/a b/\$x"');
   });
 
   test('applications directory follows XDG_DATA_HOME, then HOME', () {
