@@ -41,27 +41,26 @@ int compareYoungestFirst(ClipItem a, ClipItem b) {
   return b.id.compareTo(a.id);
 }
 
-/// Folds the user metadata of [older] copies into [keeper].
+/// The youngest clip of a non-empty group.
+ClipItem youngestOf(Iterable<ClipItem> clips) =>
+    clips.reduce((a, b) => compareYoungestFirst(a, b) <= 0 ? a : b);
+
+/// Folds the user metadata of [older] copies into [keeper]: pinned if any copy
+/// was, the union of tags (keeper's first, capped at [maxClipTags]) and the
+/// keeper's collection, else the youngest older copy's.
 ClipItem mergeDuplicateMetadata(ClipItem keeper, Iterable<ClipItem> older) {
-  final olderYoungestFirst = older.toList()..sort(compareYoungestFirst);
-  final tags = <String>{...keeper.tags};
-  for (final clip in olderYoungestFirst) {
-    for (final tag in clip.tags) {
-      if (tags.length >= maxClipTags) break;
-      tags.add(tag);
-    }
-  }
-  final collection =
-      keeper.collection ??
-      olderYoungestFirst
-          .map((clip) => clip.collection)
-          .whereType<String>()
-          .where((value) => value.isNotEmpty)
-          .firstOrNull;
+  final withCollection = older.where(
+    (clip) => clip.collection?.isNotEmpty ?? false,
+  );
   return keeper.copyWith(
-    pinned: keeper.pinned || olderYoungestFirst.any((clip) => clip.pinned),
-    tags: tags,
-    collection: collection,
+    pinned: keeper.pinned || older.any((clip) => clip.pinned),
+    tags: <String>{
+      ...keeper.tags,
+      ...older.expand((clip) => clip.tags),
+    }.take(maxClipTags).toSet(),
+    collection:
+        keeper.collection ??
+        (withCollection.isEmpty ? null : youngestOf(withCollection).collection),
   );
 }
 
@@ -83,16 +82,27 @@ TextDedupePlan planTextDedupe(Iterable<ClipItem> clips) {
   final groups = <String, List<ClipItem>>{};
   for (final clip in clips) {
     final key = clipTextKey(clip);
+    // The one in-place accumulation in this module: grouping in a single
+    // linear pass (copying lists per add would be quadratic for a large
+    // group of duplicates, e.g. a restored backup).
     if (key != null) (groups[key] ??= <ClipItem>[]).add(clip);
   }
-  final keepers = <String, ClipItem>{};
-  final removed = <String>{};
-  for (final group in groups.values.where((group) => group.length > 1)) {
-    final ordered = group.toList()..sort(compareYoungestFirst);
-    final keeper = ordered.first;
-    final older = ordered.skip(1);
-    keepers[keeper.id] = mergeDuplicateMetadata(keeper, older);
-    removed.addAll(older.map((clip) => clip.id));
-  }
-  return TextDedupePlan(keepers: keepers, removedIds: removed);
+  final duplicateGroups = groups.values.where((group) => group.length > 1);
+  final keeperOf = <List<ClipItem>, ClipItem>{
+    for (final group in duplicateGroups) group: youngestOf(group),
+  };
+  return TextDedupePlan(
+    keepers: <String, ClipItem>{
+      for (final MapEntry(key: group, value: keeper) in keeperOf.entries)
+        keeper.id: mergeDuplicateMetadata(
+          keeper,
+          group.where((clip) => clip.id != keeper.id),
+        ),
+    },
+    removedIds: <String>{
+      for (final MapEntry(key: group, value: keeper) in keeperOf.entries)
+        for (final clip in group)
+          if (clip.id != keeper.id) clip.id,
+    },
+  );
 }
