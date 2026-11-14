@@ -117,7 +117,9 @@ void main() {
   ) async {
     await _pump(tester);
     expect(
-      find.text('Tray active • Alt+C opens • Alt+X hides • capture on'),
+      find.text(
+        'Tray active • Alt+C opens • Alt+O tray • Alt+X hides • capture on',
+      ),
       findsOneWidget,
     );
     expect(find.textContaining('Shift+V'), findsNothing);

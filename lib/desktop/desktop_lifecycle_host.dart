@@ -56,7 +56,6 @@ class DesktopLifecycleHost
   final ValueNotifier<int> _summonCount = ValueNotifier<int>(0);
   bool _trayReady = false;
   bool _hotKeyReady = false;
-  HotKey? _summonHotKey;
   DesktopTrayMenuModel _trayMenu = const DesktopTrayMenuModel();
   DesktopTrayHandlers? _trayHandlers;
   Future<void> _windowReady = Future<void>.value();
@@ -109,19 +108,19 @@ class DesktopLifecycleHost
   }
 
   Future<void> dispose() async {
+    controller.stateMachine.removeListener(_syncDismissHotKey);
     windowManager.removeListener(this);
     trayManager.removeListener(this);
     _flasher.cancel();
 
     final trayWasReady = _trayReady;
     _trayReady = false;
-    final summonHotKey = _summonHotKey;
-    _summonHotKey = null;
     _hotKeyReady = false;
+    _dismissHotKeyHeld = false;
     try {
-      if (summonHotKey != null) {
-        await hotKeyManager.unregister(summonHotKey);
-      }
+      // Summon, tray and (if held) dismiss shortcuts.
+      await _dismissHotKeyTail;
+      await hotKeyManager.unregisterAll();
       if (trayWasReady) await trayManager.destroy();
     } finally {
       await windowManager.setPreventClose(false);
@@ -183,13 +182,60 @@ class DesktopLifecycleHost
         hotKey,
         keyDownHandler: (_) => unawaited(summon(flashTray: true)),
       );
-      _summonHotKey = hotKey;
       _hotKeyReady = true;
     } on Object catch (error) {
-      _summonHotKey = null;
       _hotKeyReady = false;
       debugPrint('ClipTown global summon shortcut is unavailable: $error');
     }
+    if (_trayReady) {
+      try {
+        await hotKeyManager.register(
+          desktopTrayHotKey(),
+          keyDownHandler: (_) => unawaited(showTrayMenu()),
+        );
+      } on Object {
+        // The tray stays reachable by clicking its icon.
+      }
+    }
+    controller.stateMachine.addListener(_syncDismissHotKey);
+    _syncDismissHotKey();
+  }
+
+  /// Opens the tray menu (recent clips, open/hide/quit) from anywhere.
+  Future<void> showTrayMenu() async {
+    if (!_trayReady || controller.isQuitting) return;
+    unawaited(_flasher.flash());
+    try {
+      await trayManager.popUpContextMenu();
+    } on Object {
+      // Feedback only; the icon remains clickable.
+    }
+  }
+
+  bool _dismissHotKeyHeld = false;
+  Future<void> _dismissHotKeyTail = Future<void>.value();
+
+  /// Holds the system-wide Option/Alt+X only while the window is showing, so
+  /// other apps keep that key whenever ClipTown is hidden in the tray.
+  void _syncDismissHotKey() {
+    final wanted =
+        _trayReady && dismissHotKeyWanted(controller.stateMachine.state);
+    if (wanted == _dismissHotKeyHeld) return;
+    _dismissHotKeyHeld = wanted;
+    _dismissHotKeyTail = _dismissHotKeyTail.then((_) async {
+      try {
+        if (wanted) {
+          await hotKeyManager.register(
+            desktopDismissHotKey(),
+            keyDownHandler: (_) => unawaited(dismiss()),
+          );
+        } else {
+          await hotKeyManager.unregister(desktopDismissHotKey());
+        }
+      } on Object {
+        // The in-app Option/Alt+X binding still works while focused.
+      }
+    });
   }
 
   Future<void> _configureTray() async {

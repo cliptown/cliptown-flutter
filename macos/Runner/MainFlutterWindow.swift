@@ -14,8 +14,40 @@ class MainFlutterWindow: NSWindow {
       messenger: flutterViewController.engine.binaryMessenger)
     WindowActivationChannel.register(
       messenger: flutterViewController.engine.binaryMessenger, window: self)
+    TrayMenuKeys.install()
 
     super.awakeFromNib()
+  }
+}
+
+/// Native key equivalents for the tray menu, which tray_manager cannot set:
+/// Option+C on "Open ClipTown", Option+X on "Hide ClipTown" (so Option+X closes
+/// the open tray menu and hides the app in one press) and Command+Q on "Quit
+/// ClipTown". Applied when any menu begins tracking, and only to the first
+/// three items of a menu whose items match lib/desktop/desktop_shell.dart, so a
+/// clip whose text happens to read "Hide ClipTown" never gets a shortcut.
+enum TrayMenuKeys {
+  private static let shortcuts: [(title: String, key: String, modifiers: NSEvent.ModifierFlags)] = [
+    ("Open ClipTown", "c", [.option]),
+    ("Hide ClipTown", "x", [.option]),
+    ("Quit ClipTown", "q", [.command]),
+  ]
+  private static var observer: NSObjectProtocol?
+
+  static func install() {
+    guard observer == nil else { return }
+    observer = NotificationCenter.default.addObserver(
+      forName: NSMenu.didBeginTrackingNotification, object: nil, queue: .main
+    ) { notification in
+      guard let menu = notification.object as? NSMenu,
+        menu.items.count >= shortcuts.count,
+        zip(menu.items, shortcuts).allSatisfy({ $0.title == $1.title })
+      else { return }
+      for (item, shortcut) in zip(menu.items, shortcuts) {
+        item.keyEquivalent = shortcut.key
+        item.keyEquivalentModifierMask = shortcut.modifiers
+      }
+    }
   }
 }
 

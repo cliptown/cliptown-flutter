@@ -875,7 +875,9 @@ class _ClipTownHomeState extends State<ClipTownHome> {
     final pieces = <String>[
       widget.desktopBackgroundEnabled ? 'Tray active' : 'Foreground mode',
       if (widget.desktopHotKeyEnabled)
-        '${summonShortcutLabel(isMacOS: _isApple)} opens • ${dismissShortcutLabel(isMacOS: _isApple)} hides',
+        '${summonShortcutLabel(isMacOS: _isApple)} opens • '
+            '${trayShortcutLabel(isMacOS: _isApple)} tray • '
+            '${dismissShortcutLabel(isMacOS: _isApple)} hides',
       if (widget.desktopBackgroundEnabled && !widget.desktopHotKeyEnabled)
         '${summonShortcutLabel(isMacOS: _isApple)} shortcut unavailable',
       stateMachine.state.captureRequested ? 'capture on' : 'capture paused',

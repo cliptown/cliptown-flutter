@@ -6,6 +6,7 @@ import 'package:cliptown_app/desktop/launch_at_login.dart';
 import 'package:cliptown_app/desktop/tray_icon.dart';
 import 'package:cliptown_app/history/clip_formatting.dart';
 import 'package:cliptown_app/history/clip_item.dart';
+import 'package:cliptown_app/state/app_state_machine.dart';
 import 'package:flutter/widgets.dart' show StringCharacters, TargetPlatform;
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -49,6 +50,30 @@ void main() {
       expect(hotKey.physicalKey, PhysicalKeyboardKey.keyC);
       expect(hotKey.modifiers, <HotKeyModifier>[HotKeyModifier.alt]);
       expect(hotKey.scope, HotKeyScope.system);
+    });
+
+    test('Option/Alt+O opens the tray and Option/Alt+X can be global', () {
+      final tray = desktopTrayHotKey();
+      expect(tray.physicalKey, PhysicalKeyboardKey.keyO);
+      expect(tray.modifiers, <HotKeyModifier>[HotKeyModifier.alt]);
+      expect(tray.scope, HotKeyScope.system);
+      final dismiss = desktopDismissHotKey();
+      expect(dismiss.physicalKey, PhysicalKeyboardKey.keyX);
+      expect(dismiss.scope, HotKeyScope.system);
+      expect(trayShortcutLabel(isMacOS: true), '⌥O');
+      expect(trayShortcutLabel(isMacOS: false), 'Alt+O');
+    });
+
+    test('Option/Alt+X is held system-wide only while the window shows', () {
+      final machine = AppStateMachine.localReady(
+        AppRuntimeKind.desktop,
+        captureRequested: true,
+      );
+      addTearDown(machine.dispose);
+      machine.dispatch(AppEvent.foregroundRequested);
+      expect(dismissHotKeyWanted(machine.state), isTrue);
+      machine.dispatch(AppEvent.backgroundRequested);
+      expect(dismissHotKeyWanted(machine.state), isFalse);
     });
 
     test('dismiss is an in-app Option/Alt+X', () {
@@ -198,13 +223,18 @@ void main() {
       expect(keys, <String>[
         openClipTownMenuKey,
         hideClipTownMenuKey,
+        quitClipTownMenuKey,
         '${recentClipMenuKeyPrefix}one',
         '${recentClipMenuKeyPrefix}two',
         toggleCaptureMenuKey,
-        quitClipTownMenuKey,
       ]);
-      expect(items.first.label, contains('⌥C'));
-      expect(items[1].label, contains('⌥X'));
+      // macOS: plain titles; the runner attaches native key equivalents by
+      // matching exactly these three titles in this order.
+      expect(items.take(3).map((item) => item.label), <String>[
+        openClipTownMenuTitle,
+        hideClipTownMenuTitle,
+        quitClipTownMenuTitle,
+      ]);
       expect(
         items.firstWhere((item) => item.key == toggleCaptureMenuKey).label,
         'Pause capture',
@@ -220,7 +250,9 @@ void main() {
       );
       expect(toggle.disabled, isTrue);
       expect(toggle.label, 'Resume capture');
-      expect(menu.items!.first.label, contains('Alt+C'));
+      expect(menu.items!.first.label, 'Open ClipTown   Alt+C');
+      expect(menu.items![1].label, 'Hide ClipTown   Alt+X');
+      expect(menu.items![2].label, 'Quit ClipTown');
     });
   });
 

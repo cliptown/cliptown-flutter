@@ -13,6 +13,12 @@ const String quitClipTownMenuKey = 'quit_cliptown';
 const String toggleCaptureMenuKey = 'toggle_capture';
 const String recentClipMenuKeyPrefix = 'recent_clip:';
 
+/// Titles the macOS runner matches to attach native key equivalents; keep them
+/// in sync with TrayMenuKeys in macos/Runner/MainFlutterWindow.swift.
+const String openClipTownMenuTitle = 'Open ClipTown';
+const String hideClipTownMenuTitle = 'Hide ClipTown';
+const String quitClipTownMenuTitle = 'Quit ClipTown';
+
 /// Maximum number of recent clips listed directly in the tray menu.
 const int trayRecentClipLimit = 10;
 const int _trayLabelMaxCharacters = 48;
@@ -153,12 +159,27 @@ Menu buildTrayMenu(
   required bool isMacOS,
   bool isWindows = false,
 }) {
-  final summon = summonShortcutLabel(isMacOS: isMacOS);
-  final dismiss = dismissShortcutLabel(isMacOS: isMacOS);
+  // macOS shows real key equivalents (attached natively when the menu opens,
+  // see TrayMenuKeys in MainFlutterWindow.swift), so titles stay plain there.
+  String withShortcut(String title, String shortcut) =>
+      isMacOS ? title : '$title   $shortcut';
   return Menu(
     items: <MenuItem>[
-      MenuItem(key: openClipTownMenuKey, label: 'Open ClipTown   $summon'),
-      MenuItem(key: hideClipTownMenuKey, label: 'Hide ClipTown   $dismiss'),
+      MenuItem(
+        key: openClipTownMenuKey,
+        label: withShortcut(
+          openClipTownMenuTitle,
+          summonShortcutLabel(isMacOS: isMacOS),
+        ),
+      ),
+      MenuItem(
+        key: hideClipTownMenuKey,
+        label: withShortcut(
+          hideClipTownMenuTitle,
+          dismissShortcutLabel(isMacOS: isMacOS),
+        ),
+      ),
+      MenuItem(key: quitClipTownMenuKey, label: quitClipTownMenuTitle),
       MenuItem.separator(),
       MenuItem(
         label: model.recentClips.isEmpty
@@ -178,8 +199,6 @@ Menu buildTrayMenu(
         label: model.captureOn ? 'Pause capture' : 'Resume capture',
         disabled: !model.captureAvailable,
       ),
-      MenuItem.separator(),
-      MenuItem(key: quitClipTownMenuKey, label: 'Quit ClipTown'),
     ],
   );
 }
