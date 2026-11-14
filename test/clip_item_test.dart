@@ -38,10 +38,8 @@ void main() {
   });
 
   test('file titles and summaries never display query credentials', () {
-    final title = defaultClipTitle(
-      ClipKind.files,
-      fileUris: <String>['file:///photos/cat.png?download_token=secret#fragment'],
-    );
+    final uri = 'file:///photos/cat.png?download_token=secret#fragment';
+    final title = defaultClipTitle(ClipKind.files, fileUris: [uri]);
     expect(title, 'cat.png');
 
     final now = DateTime.utc(2026, 11, 14);
@@ -49,26 +47,24 @@ void main() {
       id: 'file-1',
       kind: ClipKind.files,
       title: title,
-      fileUris: const <String>['file:///photos/cat.png?download_token=secret'],
+      fileUris: [uri],
       createdAt: now,
       lastUsedAt: now,
     );
     expect(item.summary, 'cat.png');
-    expect(
-      defaultClipTitle(ClipKind.files, fileUris: <String>['file:///']),
-      'File',
+
+    final empty = defaultClipTitle(ClipKind.files, fileUris: ['file:///']);
+    expect(empty, 'File');
+
+    final windows = defaultClipTitle(
+      ClipKind.files,
+      fileUris: [r'C:\notes\draft.txt'],
     );
-    expect(
-      defaultClipTitle(ClipKind.files, fileUris: <String>['C:\\notes\\draft.txt']),
-      'draft.txt',
-    );
-    expect(
-      defaultClipTitle(
-        ClipKind.files,
-        fileUris: <String>[List<String>.filled(150, 'x').join()],
-      ).length,
-      lessThanOrEqualTo(73),
-    );
+    expect(windows, 'draft.txt');
+
+    final longUri = List<String>.filled(150, 'x').join();
+    final longTitle = defaultClipTitle(ClipKind.files, fileUris: [longUri]);
+    expect(longTitle.length, lessThanOrEqualTo(73));
   });
 
   test('snapshot and persisted fingerprints agree', () {
