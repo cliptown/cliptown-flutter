@@ -1,29 +1,44 @@
-import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
 /// Upper bound on characters rendered for one clip. Clips can be megabytes;
 /// laying all of that out inside a list row would stall the UI.
 const int maxPreviewCharacters = 20000;
 
-/// Clip text that keeps a fixed row height.
+/// How much taller a clicked clip row grows when its text already fits.
+const double expandedRowGrowth = 0.15;
+
+/// How much taller it grows when the text is longer than the collapsed row
+/// (it then becomes scrollable inside the extra room).
+const double expandedOverflowRowGrowth = 0.25;
+
+/// The text of one clip row.
 ///
-/// Content that fits is plain text. Content taller than [collapsedLines] is
-/// clipped with an ellipsis; clicking it turns the same fixed-height area into
-/// a scroll view with a visible scrollbar. When the mouse pointer leaves (or,
-/// on touch screens, the user taps elsewhere) it collapses again and the
-/// scrollbar disappears, so wheel scrolling over the history list is never
-/// captured by a row the user is not reading.
+/// Collapsed, the text is limited to [collapsedLines] (with an ellipsis when it
+/// is longer). The row owner expands it by passing [extraHeight] > 0 (the
+/// animated extra room, 15% of the row): the text area grows by that much and
+/// becomes scrollable when the clip is longer than the space. The scrollbar is
+/// shown only while the pointer is over the text and hides when it leaves.
+/// Scrolling lives only inside an expanded row, so wheel scrolling over the
+/// history list is never captured by a row the user is not reading.
 class ClipContentPreview extends StatefulWidget {
   const ClipContentPreview({
     super.key,
     required this.text,
     this.style,
     this.collapsedLines = 3,
+    this.extraHeight = 0,
+    this.overflowExtraHeight = 0,
   });
 
   final String text;
   final TextStyle? style;
   final int collapsedLines;
+
+  /// Extra height granted by an expanded row whose text fits; 0 collapsed.
+  final double extraHeight;
+
+  /// Extra height used instead when the text overflows the collapsed lines.
+  final double overflowExtraHeight;
 
   @override
   State<ClipContentPreview> createState() => _ClipContentPreviewState();
@@ -31,12 +46,19 @@ class ClipContentPreview extends StatefulWidget {
 
 class _ClipContentPreviewState extends State<ClipContentPreview> {
   final ScrollController _scrollController = ScrollController();
-  bool _expanded = false;
+  bool _hovering = false;
 
   @override
   void didUpdateWidget(ClipContentPreview oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.text != widget.text) _expanded = false;
+    final collapsedNow =
+        widget.extraHeight <= 0 &&
+        widget.overflowExtraHeight <= 0 &&
+        (oldWidget.extraHeight > 0 || oldWidget.overflowExtraHeight > 0);
+    if ((collapsedNow || oldWidget.text != widget.text) &&
+        _scrollController.hasClients) {
+      _scrollController.jumpTo(0);
+    }
   }
 
   @override
@@ -45,14 +67,8 @@ class _ClipContentPreviewState extends State<ClipContentPreview> {
     super.dispose();
   }
 
-  void _expand() {
-    if (_expanded) return;
-    setState(() => _expanded = true);
-  }
-
-  void _collapse() {
-    if (!_expanded) return;
-    setState(() => _expanded = false);
+  void _setHovering(bool hovering) {
+    if (_hovering != hovering) setState(() => _hovering = hovering);
   }
 
   String get _displayText {
@@ -69,76 +85,76 @@ class _ClipContentPreviewState extends State<ClipContentPreview> {
     final text = _displayText;
     return LayoutBuilder(
       builder: (context, constraints) {
-        final painter = TextPainter(
+        TextPainter painter({int? maxLines}) => TextPainter(
           text: TextSpan(text: text, style: style),
-          maxLines: widget.collapsedLines,
-          ellipsis: '…',
+          maxLines: maxLines,
+          ellipsis: maxLines == null ? null : '…',
           textDirection: Directionality.of(context),
           textScaler: MediaQuery.textScalerOf(context),
         )..layout(maxWidth: constraints.maxWidth);
-        final overflows = painter.didExceedMaxLines;
-        final collapsedHeight = painter.height;
-        painter.dispose();
 
-        if (!overflows) {
-          return Text(text, key: const Key('clip-preview-text'), style: style);
-        }
+        final clipped = painter(maxLines: widget.collapsedLines);
+        final overflows = clipped.didExceedMaxLines;
+        final collapsedHeight = clipped.height;
+        clipped.dispose();
 
-        if (!_expanded) {
-          return MouseRegion(
-            cursor: SystemMouseCursors.click,
-            child: Tooltip(
-              message:
-                  'Click to scroll the whole clip here. Move the pointer '
-                  'away to collapse it again.',
-              child: GestureDetector(
-                key: const Key('clip-preview-collapsed'),
-                behavior: HitTestBehavior.opaque,
-                onTap: _expand,
-                child: Semantics(
-                  button: true,
-                  onTapHint: 'scroll the full clip',
-                  child: Text(
-                    text,
-                    maxLines: widget.collapsedLines,
-                    overflow: TextOverflow.ellipsis,
-                    style: style,
-                  ),
-                ),
-              ),
+        final extra = overflows
+            ? widget.overflowExtraHeight
+            : widget.extraHeight;
+        if (extra <= 0) {
+          if (!overflows) {
+            return Text(
+              text,
+              key: const Key('clip-preview-text'),
+              style: style,
+            );
+          }
+          return Tooltip(
+            message:
+                'Click the row to make it taller and scroll the whole clip. '
+                'Click anywhere else to shrink it.',
+            child: Text(
+              text,
+              key: const Key('clip-preview-collapsed'),
+              maxLines: widget.collapsedLines,
+              overflow: TextOverflow.ellipsis,
+              style: style,
             ),
           );
         }
 
+        final height = collapsedHeight + extra;
+        final full = painter();
+        final scrollable = full.height > height;
+        full.dispose();
+
         return MouseRegion(
-          onExit: (event) {
-            // Only real pointers leave; ignore synthetic exits on rebuild.
-            if (event.kind == PointerDeviceKind.mouse ||
-                event.kind == PointerDeviceKind.trackpad) {
-              _collapse();
-            }
-          },
-          child: TapRegion(
-            onTapOutside: (_) => _collapse(),
-            child: SizedBox(
-              key: const Key('clip-preview-expanded'),
-              height: collapsedHeight,
-              child: ScrollConfiguration(
-                // The explicit Scrollbar below is the only one shown.
-                behavior: ScrollConfiguration.of(
-                  context,
-                ).copyWith(scrollbars: false),
-                child: Scrollbar(
-                  key: const Key('clip-preview-scrollbar'),
+          onEnter: (_) => _setHovering(true),
+          onExit: (_) => _setHovering(false),
+          child: SizedBox(
+            key: const Key('clip-preview-expanded'),
+            // Full width, so the scrollbar sits at the right edge of the row
+            // however short the lines are.
+            width: double.infinity,
+            height: height,
+            child: ScrollConfiguration(
+              // The explicit Scrollbar below is the only one shown.
+              behavior: ScrollConfiguration.of(
+                context,
+              ).copyWith(scrollbars: false),
+              child: Scrollbar(
+                key: const Key('clip-preview-scrollbar'),
+                controller: _scrollController,
+                thumbVisibility: scrollable && _hovering,
+                child: SingleChildScrollView(
                   controller: _scrollController,
-                  thumbVisibility: true,
-                  child: SingleChildScrollView(
-                    controller: _scrollController,
-                    primary: false,
-                    child: Padding(
-                      padding: const EdgeInsets.only(right: 12),
-                      child: Text(text, style: style),
-                    ),
+                  primary: false,
+                  physics: scrollable
+                      ? null
+                      : const NeverScrollableScrollPhysics(),
+                  child: Padding(
+                    padding: const EdgeInsets.only(right: 12),
+                    child: Text(text, style: style),
                   ),
                 ),
               ),

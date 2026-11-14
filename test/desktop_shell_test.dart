@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:cliptown_app/desktop/desktop_shell.dart';
@@ -351,6 +352,57 @@ void main() {
       expect(parseHexColor(' #ABCDEF ')!.toARGB32(), 0xffabcdef);
       expect(parseHexColor('red'), isNull);
       expect(parseHexColor(null), isNull);
+    });
+  });
+
+  group('tray menu click toggle', () {
+    test(
+      'a click opens the menu; clicks while it is open do not stack',
+      () async {
+        var popUps = 0;
+        final closeMenu = Completer<void>();
+        final toggle = TrayMenuToggle(() {
+          popUps += 1;
+          return closeMenu.future;
+        });
+
+        final opening = toggle.toggle();
+        expect(toggle.isOpen, isTrue);
+        expect(await toggle.toggle(), isFalse, reason: 'second click closes');
+        closeMenu.complete();
+        expect(await opening, isTrue);
+        expect(popUps, 1);
+        expect(toggle.isOpen, isFalse);
+      },
+    );
+
+    test('the click that closed the menu does not reopen it', () async {
+      var now = DateTime.utc(2026, 11, 14);
+      var popUps = 0;
+      final toggle = TrayMenuToggle(() async => popUps += 1, clock: () => now);
+
+      expect(await toggle.toggle(), isTrue);
+      now = now.add(const Duration(milliseconds: 120));
+      expect(
+        await toggle.toggle(),
+        isFalse,
+        reason: 'same click, delivered late',
+      );
+      now = now.add(const Duration(milliseconds: 400));
+      expect(await toggle.toggle(), isTrue, reason: 'a new, later click');
+      expect(popUps, 2);
+    });
+
+    test('a failing native pop-up leaves the toggle usable', () async {
+      var now = DateTime.utc(2026, 11, 14);
+      final toggle = TrayMenuToggle(
+        () async => throw StateError('tray gone'),
+        clock: () => now,
+      );
+      expect(await toggle.toggle(), isTrue);
+      expect(toggle.isOpen, isFalse);
+      now = now.add(const Duration(seconds: 1));
+      expect(await toggle.toggle(), isTrue);
     });
   });
 }

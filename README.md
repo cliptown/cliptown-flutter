@@ -36,6 +36,8 @@ curl -fsSL https://raw.githubusercontent.com/cliptown/cliptown-flutter/main/scri
 
 Add `-s -- --open-at-login` to also start ClipTown automatically when you log in (macOS 13+; ClipTown registers itself as a login item and starts hidden in the menu bar).
 
+Add `--stable-signing` to keep macOS keychain access across updates: builds are not signed with an Apple Developer ID yet, so macOS sees every update as a new app and asks once for your **login password** to let ClipTown read its vault key (the "flutter_secure_storage_service" prompt). With `--stable-signing` the installer creates a self-signed "ClipTown Local Signing" identity for this Mac (in its own keychain under `~/.config/cliptown/signing`) and signs every install with it, so after one **Always Allow** there are no more prompts. If that prompt appears at login, ClipTown waits for your answer and continues on its own.
+
 The installer downloads the latest GitHub Release (`ClipTown-macos.zip`), verifies its SHA-256 checksum, and installs `ClipTown.app` into `/Applications` (or `~/Applications`). Add `-s -- --from-source` to clone this repository and the pinned `cliptown-interfaces` revision and build locally instead (needs Xcode, CocoaPods and Flutter); this is also the automatic fallback when no release has been published yet. Releases are produced by `.github/workflows/macos-release.yml` on `v*` tags.
 
 Current builds are ad-hoc signed (`scripts/build-macos-adhoc.sh`): they use `macos/Runner/AdHoc.entitlements` and keep the vault key in the encrypted login Keychain (`--dart-define=CLIPTOWN_MACOS_DATA_PROTECTION_KEYCHAIN=false`), because the data-protection Keychain requires a provisioned Developer ID signature. ClipTown runs fully locally — no account, login, or cloud service is needed.
@@ -55,11 +57,15 @@ Current builds are ad-hoc signed (`scripts/build-macos-adhoc.sh`): they use `mac
 | ⌘F / Ctrl+F | in ClipTown | Focus search |
 | hold ⌥ / Alt | in ClipTown | Show tooltips instantly while hovering (every control has one) |
 
-⌥C and ⌥O are always global; ⌥X is global only while ClipTown is showing, so other apps keep ⌥X (and all editing keys) whenever ClipTown is hidden. The tray (menu-bar) icon opens ClipTown on click. Its menu (also ⌥O) starts with Open, Hide and Quit, then lists the ten most recent clips (click to copy; likely secrets are masked), then pause/resume capture. **Open ClipTown at login** (Privacy and capture settings) starts it hidden in the tray via `SMAppService` on macOS 13+, the `HKCU\…\Run` key on Windows, and an XDG autostart entry on Linux.
+⌥C and ⌥O are always global; ⌥X is global only while ClipTown is showing, so other apps keep ⌥X (and all editing keys) whenever ClipTown is hidden. Clicking the tray (menu-bar) icon opens its menu whether or not the window is showing, and clicking it again closes the menu. The menu (also ⌥O) starts with Open, Hide and Quit, then lists the ten most recent clips (click to copy; likely secrets are masked), then pause/resume capture. **Open ClipTown at login** (Privacy and capture settings) starts it hidden in the tray via `SMAppService` on macOS 13+, the `HKCU\…\Run` key on Windows, and an XDG autostart entry on Linux.
 
 On Linux, ClipTown adds itself to the app launcher (`~/.local/share/applications/cliptown.desktop`, with its icon) the first time it runs, and refreshes the entry if the bundle moves; Flatpak/Snap builds keep their own entry.
 
-Clip text taller than a row is clipped; click it to scroll the full text inside the row, and the scrollbar disappears when the pointer leaves.
+Text clips are de-duplicated: two clips are duplicates only when their text is verbatim equal (whitespace and case included), and the youngest copy wins while keeping any pin, tags or collection set on older copies. This happens as clipboard changes stream in, at capture, and in a background sweep shortly after start-up and after the history has been quiet for a moment. Images and files are not merged by this rule.
+
+Clicking a clip row makes it taller: 25% when its text is longer than the row (it then scrolls inside the row, with the scrollbar at the right edge, visible only while the pointer is over the text), 15% otherwise. Clicking anywhere else, or Esc, shrinks it back. Search and filters stay pinned above the list.
+
+**New clip** adds typed text, whatever is on the clipboard now (text, image or files), an image file or files. You can also drag images, files or text onto the ClipTown window or the New clip dialog. Manual additions work even while automatic capture is paused. Capture on/off and Save clipboard now sit in their own bar above the search box; results such as "Existing item moved to the top" appear as a 4-second toast with a close button. Pinned clips are marked in pink (pin icon, chip and outline).
 
 ## Formally checked app state
 

@@ -120,3 +120,47 @@ class TrayIconFlasher {
   /// Invalidates any in-flight flash (used on shutdown).
   void cancel() => _generation += 1;
 }
+
+typedef PopUpMenu = Future<void> Function();
+
+/// Click-to-toggle for the tray menu.
+///
+/// The native "pop up menu" call returns only once the menu closes (macOS and
+/// Windows track menus modally). The click that closes an open menu by hitting
+/// the tray icon again may still be delivered as a fresh click right after, so
+/// clicks while the menu is open, or within [closeGrace] of it closing, are
+/// treated as "close" and do not reopen it.
+class TrayMenuToggle {
+  TrayMenuToggle(
+    this._popUp, {
+    this.closeGrace = const Duration(milliseconds: 300),
+    DateTime Function()? clock,
+  }) : _clock = clock ?? DateTime.now;
+
+  final PopUpMenu _popUp;
+  final Duration closeGrace;
+  final DateTime Function() _clock;
+  bool _open = false;
+  DateTime? _closedAt;
+
+  bool get isOpen => _open;
+
+  /// Returns whether this call opened the menu.
+  Future<bool> toggle() async {
+    if (_open) return false;
+    final closedAt = _closedAt;
+    if (closedAt != null && _clock().difference(closedAt) < closeGrace) {
+      return false;
+    }
+    _open = true;
+    try {
+      await _popUp();
+    } on Object {
+      // The icon stays clickable; nothing else to recover.
+    } finally {
+      _open = false;
+      _closedAt = _clock();
+    }
+    return true;
+  }
+}
