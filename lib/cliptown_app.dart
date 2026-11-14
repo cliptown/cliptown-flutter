@@ -228,7 +228,20 @@ class _ClipTownHomeState extends State<ClipTownHome> {
   final FocusNode _rootFocus = FocusNode(debugLabel: 'clip-home');
   final FocusNode _searchFocus = FocusNode(debugLabel: 'clip-search');
   final TextEditingController _searchController = TextEditingController();
-  final GlobalKey _selectedRowKey = GlobalKey(debugLabel: 'selected-clip');
+
+  /// One stable key per visible clip row: keeps row state (expansion
+  /// animation) across selection changes and lets the selection scroll into
+  /// view.
+  final Map<String, GlobalKey> _rowKeys = <String, GlobalKey>{};
+  String? _expandedClipId;
+
+  GlobalKey _rowKeyFor(String id) =>
+      _rowKeys.putIfAbsent(id, () => GlobalKey(debugLabel: 'clip-row'));
+
+  void _collapseRow(String id) {
+    if (_expandedClipId == id) setState(() => _expandedClipId = null);
+  }
+
   int _selectedIndex = 0;
   List<ClipItem> _visibleClips = const <ClipItem>[];
 
@@ -344,7 +357,10 @@ class _ClipTownHomeState extends State<ClipTownHome> {
     if (next == _selectedIndex) return;
     setState(() => _selectedIndex = next);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      final rowContext = _selectedRowKey.currentContext;
+      final selectedId = _selectedClip?.id;
+      final rowContext = selectedId == null
+          ? null
+          : _rowKeys[selectedId]?.currentContext;
       if (rowContext == null || !rowContext.mounted) return;
       Scrollable.ensureVisible(
         rowContext,
@@ -375,6 +391,10 @@ class _ClipTownHomeState extends State<ClipTownHome> {
   }
 
   void _onEscape() {
+    if (_expandedClipId != null) {
+      setState(() => _expandedClipId = null);
+      return;
+    }
     if (_searchController.text.isNotEmpty) {
       _searchController.clear();
       _onQueryChanged('');
@@ -615,6 +635,12 @@ class _ClipTownHomeState extends State<ClipTownHome> {
     final localWorkAllowed = stateMachine.state.permitsLocalWork;
     final clips = localWorkAllowed ? store.visibleClips : const <ClipItem>[];
     _visibleClips = clips;
+    // Forget keys of rows that are no longer in the list.
+    final visibleIds = <String>{for (final clip in clips) clip.id};
+    _rowKeys.removeWhere((id, _) => !visibleIds.contains(id));
+    if (_expandedClipId case final id? when !visibleIds.contains(id)) {
+      _expandedClipId = null;
+    }
     final selectedIndex = clips.isEmpty
         ? -1
         : _selectedIndex.clamp(0, clips.length - 1);
@@ -676,22 +702,30 @@ class _ClipTownHomeState extends State<ClipTownHome> {
                 final clipIndex = index ~/ 2;
                 final clip = clips[clipIndex];
                 final selected = clipIndex == selectedIndex;
-                return _ClipCard(
-                  key: selected ? _selectedRowKey : ValueKey(clip.id),
-                  clip: clip,
-                  now: now,
-                  selected: selected,
-                  quickCopyLabel: clipIndex < 9
-                      ? '${_isApple ? '⌘' : 'Ctrl+'}${clipIndex + 1}'
-                      : null,
-                  onSelect: () => setState(() => _selectedIndex = clipIndex),
-                  queued: store.queuedIds.contains(clip.id),
-                  onCopy: () => _run(() => clipboardController.copy(clip)),
-                  onToggleQueued: () =>
-                      _runLocal(() => store.toggleQueued(clip.id)),
-                  onTogglePinned: () =>
-                      _runLocal(() => store.togglePinned(clip.id)),
-                  onAction: (action) => _handleClipAction(clip, action),
+                return _ExpandingRow(
+                  key: _rowKeyFor(clip.id),
+                  expanded: clip.id == _expandedClipId,
+                  onCollapse: () => _collapseRow(clip.id),
+                  builder: (context, extraHeight) => _ClipCard(
+                    clip: clip,
+                    now: now,
+                    selected: selected,
+                    extraHeight: extraHeight,
+                    quickCopyLabel: clipIndex < 9
+                        ? '${_isApple ? '⌘' : 'Ctrl+'}${clipIndex + 1}'
+                        : null,
+                    onSelect: () => setState(() {
+                      _selectedIndex = clipIndex;
+                      _expandedClipId = clip.id;
+                    }),
+                    queued: store.queuedIds.contains(clip.id),
+                    onCopy: () => _run(() => clipboardController.copy(clip)),
+                    onToggleQueued: () =>
+                        _runLocal(() => store.toggleQueued(clip.id)),
+                    onTogglePinned: () =>
+                        _runLocal(() => store.togglePinned(clip.id)),
+                    onAction: (action) => _handleClipAction(clip, action),
+                  ),
                 );
               }, childCount: clips.length * 2 - 1),
             ),
@@ -1284,11 +1318,11 @@ class _ClipTownHomeState extends State<ClipTownHome> {
 
 class _ClipCard extends StatelessWidget {
   const _ClipCard({
-    super.key,
     required this.clip,
     required this.now,
     required this.selected,
     required this.onSelect,
+    this.extraHeight = 0,
     this.quickCopyLabel,
     required this.queued,
     required this.onCopy,
@@ -1301,6 +1335,9 @@ class _ClipCard extends StatelessWidget {
   final DateTime now;
   final bool selected;
   final VoidCallback onSelect;
+
+  /// Animated extra room while the row is expanded (see _ExpandingRow).
+  final double extraHeight;
   final String? quickCopyLabel;
   final bool queued;
   final VoidCallback onCopy;
@@ -1338,6 +1375,7 @@ class _ClipCard extends StatelessWidget {
                   ClipContentPreview(
                     key: Key('clip-preview-${clip.id}'),
                     text: clip.summary,
+                    extraHeight: extraHeight,
                     style: clip.kind == ClipKind.code
                         ? const TextStyle(fontFamily: 'monospace')
                         : null,
@@ -1745,4 +1783,75 @@ class _AppTitle extends StatelessWidget {
       const Text('ClipTown'),
     ],
   );
+}
+
+/// A history row that grows [expandedRowGrowth] (15%) taller while expanded.
+///
+/// The owner sets [expanded] when the row is clicked; any tap outside the row
+/// calls [onCollapse]. The row measures its own collapsed height at the moment
+/// it expands and animates the extra room in and out, handing the animated
+/// amount to [builder] (which gives it to the clip text).
+class _ExpandingRow extends StatefulWidget {
+  const _ExpandingRow({
+    super.key,
+    required this.expanded,
+    required this.onCollapse,
+    required this.builder,
+  });
+
+  final bool expanded;
+  final VoidCallback onCollapse;
+  final Widget Function(BuildContext context, double extraHeight) builder;
+
+  @override
+  State<_ExpandingRow> createState() => _ExpandingRowState();
+}
+
+class _ExpandingRowState extends State<_ExpandingRow> {
+  double _collapsedHeight = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    // Created already expanded (e.g. scrolled back into view): measure after
+    // the first, collapsed-height layout.
+    if (widget.expanded) _measureAfterLayout();
+  }
+
+  @override
+  void didUpdateWidget(_ExpandingRow oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.expanded && !oldWidget.expanded) {
+      // Sizes cannot be read during build: measure the still-collapsed row
+      // right after this frame's layout, then animate the extra room in.
+      _collapsedHeight = 0;
+      _measureAfterLayout();
+    }
+  }
+
+  void _measureAfterLayout() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !widget.expanded) return;
+      final height = context.size?.height ?? 0;
+      if (height > 0 && height != _collapsedHeight) {
+        setState(() => _collapsedHeight = height);
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final target = widget.expanded ? _collapsedHeight * expandedRowGrowth : 0.0;
+    return TapRegion(
+      onTapOutside: (_) {
+        if (widget.expanded) widget.onCollapse();
+      },
+      child: TweenAnimationBuilder<double>(
+        tween: Tween<double>(end: target),
+        duration: const Duration(milliseconds: 160),
+        curve: Curves.easeOutCubic,
+        builder: (context, extra, _) => widget.builder(context, extra),
+      ),
+    );
+  }
 }

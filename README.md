@@ -59,7 +59,7 @@ Current builds are ad-hoc signed (`scripts/build-macos-adhoc.sh`): they use `mac
 
 On Linux, ClipTown adds itself to the app launcher (`~/.local/share/applications/cliptown.desktop`, with its icon) the first time it runs, and refreshes the entry if the bundle moves; Flatpak/Snap builds keep their own entry.
 
-Clip text taller than a row is clipped; click it to scroll the full text inside the row, and the scrollbar disappears when the pointer leaves.
+Clicking a clip row makes it 15% taller (more of the clip shows; a long clip scrolls inside it, with the scrollbar visible only while the pointer is over the text). Clicking anywhere else, or Esc, shrinks it back.
 
 ## Formally checked app state
 

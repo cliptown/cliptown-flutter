@@ -322,54 +322,6 @@ void main() {
     expect(h.shell.lastMenu!.captureOn, isFalse);
   });
 
-  testWidgets('tall clips scroll on click and collapse when the mouse leaves', (
-    tester,
-  ) async {
-    final store = ClipStore(
-      repository: MemoryClipRepository(
-        seed: <ClipItem>[
-          ClipItem(
-            id: 'long',
-            kind: ClipKind.text,
-            title: 'Long note',
-            text: List<String>.generate(40, (i) => 'line $i').join('\n'),
-            createdAt: demoFixtureBase,
-            lastUsedAt: demoFixtureBase,
-          ),
-        ],
-      ),
-      clock: demoClock,
-    );
-    await store.initialize();
-    await _pump(tester, store: store);
-
-    final collapsed = find.byKey(const Key('clip-preview-collapsed'));
-    expect(collapsed, findsOneWidget);
-    expect(find.byKey(const Key('clip-preview-scrollbar')), findsNothing);
-    final rowHeight = tester.getSize(collapsed).height;
-
-    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
-    addTearDown(mouse.removePointer);
-    await mouse.addPointer(location: tester.getCenter(collapsed));
-    await mouse.down(tester.getCenter(collapsed));
-    await mouse.up();
-    await tester.pumpAndSettle();
-
-    final expanded = find.byKey(const Key('clip-preview-expanded'));
-    expect(expanded, findsOneWidget);
-    expect(find.byKey(const Key('clip-preview-scrollbar')), findsOneWidget);
-    expect(tester.getSize(expanded).height, closeTo(rowHeight, 0.5));
-    expect(find.text('line 39', findRichText: true), findsNothing);
-
-    await tester.drag(expanded, const Offset(0, -400));
-    await tester.pumpAndSettle();
-
-    await mouse.moveTo(const Offset(5, 5));
-    await tester.pumpAndSettle();
-    expect(find.byKey(const Key('clip-preview-scrollbar')), findsNothing);
-    expect(find.byKey(const Key('clip-preview-collapsed')), findsOneWidget);
-  });
-
   testWidgets('short clips render as plain text without scroll affordance', (
     tester,
   ) async {
@@ -592,4 +544,129 @@ void main() {
     );
     expect(tester.widget<Image>(logo).semanticLabel, 'ClipTown logo');
   });
+
+  Finder rowCard(String id) => find.ancestor(
+    of: find.byKey(Key('clip-$id')),
+    matching: find.byType(Card),
+  );
+
+  testWidgets('clicking a row makes it 15% taller; clicking elsewhere shrinks '
+      'it back', (tester) async {
+    await _pump(tester);
+    final before = tester.getSize(rowCard('security-notes')).height;
+
+    await tester.tap(find.text('Security notes'));
+    await tester.pumpAndSettle();
+    expect(
+      tester.getSize(rowCard('security-notes')).height,
+      closeTo(before * 1.15, 1),
+    );
+
+    await tester.tap(find.byKey(const Key('clip-search')));
+    await tester.pumpAndSettle();
+    expect(
+      tester.getSize(rowCard('security-notes')).height,
+      closeTo(before, 0.5),
+    );
+  });
+
+  testWidgets('clicking another row moves the expansion to it', (tester) async {
+    await _pump(tester);
+    final deployBefore = tester.getSize(rowCard('deploy-command')).height;
+    final notesBefore = tester.getSize(rowCard('security-notes')).height;
+
+    await tester.tap(find.text('Deploy command'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Security notes'));
+    await tester.pumpAndSettle();
+
+    expect(
+      tester.getSize(rowCard('deploy-command')).height,
+      closeTo(deployBefore, 0.5),
+    );
+    expect(
+      tester.getSize(rowCard('security-notes')).height,
+      closeTo(notesBefore * 1.15, 1),
+    );
+  });
+
+  testWidgets('Escape shrinks an expanded row before anything else', (
+    tester,
+  ) async {
+    final h = await _pump(tester);
+    final before = tester.getSize(rowCard('security-notes')).height;
+    await tester.tap(find.text('Security notes'));
+    await tester.pumpAndSettle();
+    await _press(tester, LogicalKeyboardKey.escape);
+    expect(
+      tester.getSize(rowCard('security-notes')).height,
+      closeTo(before, 0.5),
+    );
+    expect(h.shell.dismissals, 0);
+  });
+
+  testWidgets(
+    'a long clip scrolls inside its expanded row; the scrollbar shows '
+    'only while hovered',
+    (tester) async {
+      final store = ClipStore(
+        repository: MemoryClipRepository(
+          seed: <ClipItem>[
+            ClipItem(
+              id: 'long',
+              kind: ClipKind.text,
+              title: 'Long note',
+              text: List<String>.generate(40, (i) => 'line $i').join('\n'),
+              createdAt: demoFixtureBase,
+              lastUsedAt: demoFixtureBase,
+            ),
+          ],
+        ),
+        clock: demoClock,
+      );
+      await store.initialize();
+      await _pump(tester, store: store);
+      expect(find.byKey(const Key('clip-preview-collapsed')), findsOneWidget);
+      final collapsedRow = tester.getSize(rowCard('long')).height;
+
+      await tester.tap(find.text('Long note'));
+      await tester.pumpAndSettle();
+      final expanded = find.byKey(const Key('clip-preview-expanded'));
+      expect(expanded, findsOneWidget);
+      expect(
+        tester.getSize(rowCard('long')).height,
+        closeTo(collapsedRow * 1.15, 1),
+      );
+      bool thumbShown() => tester
+          .widget<Scrollbar>(find.byKey(const Key('clip-preview-scrollbar')))
+          .thumbVisibility!;
+      expect(thumbShown(), isFalse, reason: 'not hovered yet');
+
+      final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+      addTearDown(mouse.removePointer);
+      await mouse.addPointer(location: tester.getCenter(expanded));
+      await tester.pumpAndSettle();
+      expect(thumbShown(), isTrue);
+
+      await tester.drag(expanded, const Offset(0, -300));
+      await tester.pumpAndSettle();
+      final scrollable = tester.state<ScrollableState>(
+        find.descendant(of: expanded, matching: find.byType(Scrollable)),
+      );
+      expect(scrollable.position.pixels, greaterThan(0));
+
+      await mouse.moveTo(const Offset(5, 5));
+      await tester.pumpAndSettle();
+      expect(thumbShown(), isFalse, reason: 'hidden once the cursor leaves');
+      expect(expanded, findsOneWidget, reason: 'still expanded until a click');
+
+      await tester.tap(find.byKey(const Key('clip-search')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('clip-preview-collapsed')), findsOneWidget);
+      expect(
+        tester.getSize(rowCard('long')).height,
+        closeTo(collapsedRow, 0.5),
+      );
+    },
+  );
 }
