@@ -245,11 +245,20 @@ bool _looksLikeCode(String value) {
 }
 
 String _fileNameFromUri(String value) {
-  final uri = Uri.tryParse(value);
-  if (uri != null && uri.pathSegments.isNotEmpty) {
-    return Uri.decodeComponent(uri.pathSegments.last);
+  // Never display URL query/fragment material: it may be a signed download token.
+  final path = value.split(RegExp(r'[?#]')).first.replaceAll('\\', '/');
+  final encodedName = path.split('/').last;
+  if (encodedName.isEmpty) return 'File';
+  try {
+    final name = Uri.decodeComponent(encodedName);
+    if (name.isEmpty) return 'File';
+    final characters = name.runes.take(73).toList(growable: false);
+    return characters.length > 72
+        ? '${String.fromCharCodes(characters.take(72))}…'
+        : name;
+  } on FormatException {
+    return 'File';
   }
-  return value;
 }
 
 String _requiredString(Map<String, Object?> json, String key) {
