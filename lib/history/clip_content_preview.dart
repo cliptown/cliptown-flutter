@@ -4,8 +4,12 @@ import 'package:flutter/material.dart';
 /// laying all of that out inside a list row would stall the UI.
 const int maxPreviewCharacters = 20000;
 
-/// How much taller a clicked clip row grows.
+/// How much taller a clicked clip row grows when its text already fits.
 const double expandedRowGrowth = 0.15;
+
+/// How much taller it grows when the text is longer than the collapsed row
+/// (it then becomes scrollable inside the extra room).
+const double expandedOverflowRowGrowth = 0.25;
 
 /// The text of one clip row.
 ///
@@ -23,14 +27,18 @@ class ClipContentPreview extends StatefulWidget {
     this.style,
     this.collapsedLines = 3,
     this.extraHeight = 0,
+    this.overflowExtraHeight = 0,
   });
 
   final String text;
   final TextStyle? style;
   final int collapsedLines;
 
-  /// Extra height granted by an expanded row; 0 when collapsed.
+  /// Extra height granted by an expanded row whose text fits; 0 collapsed.
   final double extraHeight;
+
+  /// Extra height used instead when the text overflows the collapsed lines.
+  final double overflowExtraHeight;
 
   @override
   State<ClipContentPreview> createState() => _ClipContentPreviewState();
@@ -43,7 +51,10 @@ class _ClipContentPreviewState extends State<ClipContentPreview> {
   @override
   void didUpdateWidget(ClipContentPreview oldWidget) {
     super.didUpdateWidget(oldWidget);
-    final collapsedNow = widget.extraHeight <= 0 && oldWidget.extraHeight > 0;
+    final collapsedNow =
+        widget.extraHeight <= 0 &&
+        widget.overflowExtraHeight <= 0 &&
+        (oldWidget.extraHeight > 0 || oldWidget.overflowExtraHeight > 0);
     if ((collapsedNow || oldWidget.text != widget.text) &&
         _scrollController.hasClients) {
       _scrollController.jumpTo(0);
@@ -87,7 +98,10 @@ class _ClipContentPreviewState extends State<ClipContentPreview> {
         final collapsedHeight = clipped.height;
         clipped.dispose();
 
-        if (widget.extraHeight <= 0) {
+        final extra = overflows
+            ? widget.overflowExtraHeight
+            : widget.extraHeight;
+        if (extra <= 0) {
           if (!overflows) {
             return Text(
               text,
@@ -109,7 +123,7 @@ class _ClipContentPreviewState extends State<ClipContentPreview> {
           );
         }
 
-        final height = collapsedHeight + widget.extraHeight;
+        final height = collapsedHeight + extra;
         final full = painter();
         final scrollable = full.height > height;
         full.dispose();
@@ -119,6 +133,9 @@ class _ClipContentPreviewState extends State<ClipContentPreview> {
           onExit: (_) => _setHovering(false),
           child: SizedBox(
             key: const Key('clip-preview-expanded'),
+            // Full width, so the scrollbar sits at the right edge of the row
+            // however short the lines are.
+            width: double.infinity,
             height: height,
             child: ScrollConfiguration(
               // The explicit Scrollbar below is the only one shown.

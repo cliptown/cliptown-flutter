@@ -63,7 +63,9 @@ On Linux, ClipTown adds itself to the app launcher (`~/.local/share/applications
 
 Text clips are de-duplicated: two clips are duplicates only when their text is verbatim equal (whitespace and case included), and the youngest copy wins while keeping any pin, tags or collection set on older copies. This happens as clipboard changes stream in, at capture, and in a background sweep shortly after start-up and after the history has been quiet for a moment. Images and files are not merged by this rule.
 
-Clicking a clip row makes it 15% taller (more of the clip shows; a long clip scrolls inside it, with the scrollbar visible only while the pointer is over the text). Clicking anywhere else, or Esc, shrinks it back.
+Clicking a clip row makes it taller: 25% when its text is longer than the row (it then scrolls inside the row, with the scrollbar at the right edge, visible only while the pointer is over the text), 15% otherwise. Clicking anywhere else, or Esc, shrinks it back. Search and filters stay pinned above the list.
+
+**New clip** adds typed text, whatever is on the clipboard now (text, image or files), an image file or files. You can also drag images, files or text onto the ClipTown window or the New clip dialog. Manual additions work even while automatic capture is paused. Capture on/off and Save clipboard now sit in their own bar above the search box; results such as "Existing item moved to the top" appear as a 4-second toast with a close button. Pinned clips are marked in pink (pin icon, chip and outline).
 
 ## Formally checked app state
 

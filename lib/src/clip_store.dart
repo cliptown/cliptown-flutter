@@ -227,14 +227,18 @@ class ClipStore extends ChangeNotifier {
   }
 
   Future<CaptureResult> capture(
-    ClipboardSnapshot snapshot,
-  ) => _enqueue(() async {
+    ClipboardSnapshot snapshot, {
+    bool userInitiated = false,
+  }) => _enqueue(() async {
     if (_vaultLocked) {
       return const CaptureResult.rejected(
         CaptureRejectionReason.vaultUnavailable,
       );
     }
-    final rejection = _policy.evaluate(snapshot);
+    final policy = userInitiated
+        ? _policy.copyWith(captureEnabled: true)
+        : _policy;
+    final rejection = policy.evaluate(snapshot);
     if (rejection != null) {
       _statusMessage = captureRejectionLabel(rejection);
       notifyListeners();
@@ -304,6 +308,10 @@ class ClipStore extends ChangeNotifier {
 
   Future<CaptureResult> addText(String text) =>
       capture(ClipboardSnapshot.text(text: text));
+
+  /// A clip the user added by hand (text, image or files); see [capture].
+  Future<CaptureResult> addManual(ClipboardSnapshot snapshot) =>
+      capture(snapshot, userInitiated: true);
 
   Future<void> togglePinned(String id) => _enqueue(() async {
     await _commit(() {

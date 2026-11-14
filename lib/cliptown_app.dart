@@ -10,9 +10,12 @@ import 'clipboard/clipboard_service.dart';
 import 'desktop/desktop_lifecycle_host.dart';
 import 'desktop/desktop_shell.dart';
 import 'desktop/desktop_shortcuts.dart';
+import 'history/clip_drop.dart';
 import 'history/clip_content_preview.dart';
 import 'history/clip_formatting.dart';
 import 'history/clip_item.dart';
+import 'history/clipboard_snapshot.dart';
+import 'history/new_clip_dialog.dart';
 import 'history/text_transform.dart';
 import 'proximity/nearby_share_page.dart';
 import 'src/clip_store.dart';
@@ -256,6 +259,8 @@ class _ClipTownHomeState extends State<ClipTownHome> {
     store.addListener(_syncTrayMenu);
     stateMachine.addListener(_syncTrayMenu);
     _syncTrayMenu();
+    store.addListener(_onStoreStatus);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _onStoreStatus());
   }
 
   @override
@@ -269,6 +274,8 @@ class _ClipTownHomeState extends State<ClipTownHome> {
     if (oldWidget.store != store) {
       oldWidget.store.removeListener(_syncTrayMenu);
       store.addListener(_syncTrayMenu);
+      oldWidget.store.removeListener(_onStoreStatus);
+      store.addListener(_onStoreStatus);
     }
     if (oldWidget.stateMachine != stateMachine) {
       oldWidget.stateMachine.removeListener(_syncTrayMenu);
@@ -279,12 +286,40 @@ class _ClipTownHomeState extends State<ClipTownHome> {
   @override
   void dispose() {
     desktopShell?.summonCount.removeListener(_onSummoned);
+    store.removeListener(_onStoreStatus);
     store.removeListener(_syncTrayMenu);
     stateMachine.removeListener(_syncTrayMenu);
     _rootFocus.dispose();
     _searchFocus.dispose();
     _searchController.dispose();
     super.dispose();
+  }
+
+  /// How long a status toast stays up unless closed with its ✕.
+  static const Duration statusToastDuration = Duration(seconds: 4);
+  bool _undoSnackBarOpen = false;
+
+  /// One-off store results ("Existing item moved to the top", "Copied …")
+  /// become a toast with a close button, then are cleared from the store.
+  void _onStoreStatus() {
+    final message = store.statusMessage;
+    if (message == null || !mounted || _undoSnackBarOpen) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || store.statusMessage != message) return;
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          SnackBar(
+            key: const Key('status-toast'),
+            content: Text(message),
+            duration: statusToastDuration,
+            behavior: SnackBarBehavior.floating,
+            width: 420,
+            showCloseIcon: true,
+          ),
+        );
+      store.setStatusMessage(null);
+    });
   }
 
   void _attachShell(DesktopShell? shell) {
@@ -515,19 +550,29 @@ class _ClipTownHomeState extends State<ClipTownHome> {
   Future<void> _deleteWithUndo(ClipItem clip) async {
     final deleted = await _runLocal(() => store.delete(clip.id));
     if (!deleted || !mounted) return;
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(
-        SnackBar(
-          key: const Key('clip-deleted-snackbar'),
-          content: Text('Deleted "${clip.title}"'),
-          action: SnackBarAction(
-            key: const Key('undo-delete'),
-            label: 'Undo',
-            onPressed: () => _runLocal(() => store.restore(clip)),
-          ),
+    final messenger = ScaffoldMessenger.of(context)..hideCurrentSnackBar();
+    _undoSnackBarOpen = true;
+    final controller = messenger.showSnackBar(
+      SnackBar(
+        key: const Key('clip-deleted-snackbar'),
+        content: Text('Deleted "${clip.title}"'),
+        behavior: SnackBarBehavior.floating,
+        width: 420,
+        showCloseIcon: true,
+        action: SnackBarAction(
+          key: const Key('undo-delete'),
+          label: 'Undo',
+          onPressed: () => _runLocal(() => store.restore(clip)),
         ),
-      );
+      ),
+    );
+    // While Undo is offered, status toasts wait rather than replace it.
+    unawaited(
+      controller.closed.then((_) {
+        _undoSnackBarOpen = false;
+        if (mounted) _onStoreStatus();
+      }),
+    );
   }
 
   @override
@@ -662,16 +707,31 @@ class _ClipTownHomeState extends State<ClipTownHome> {
         ),
         const SizedBox(height: 14),
         _StatusBanner(
+          // Persistent state only; one-off results ("Existing item moved to
+          // the top", "Copied") are shown as toasts (see _showStatusToast).
           message:
               clipboardController.errorMessage ??
-              store.statusMessage ??
-              (stateMachine.state.permitsCaptureWork
+              (!localWorkAllowed
+                  ? 'Encrypted history is locked. Capture remains off.'
+                  : stateMachine.state.permitsCaptureWork
                   ? 'Capture ready'
                   : 'Capture paused — existing history remains searchable'),
           isError:
               !localWorkAllowed || clipboardController.errorMessage != null,
         ),
         const SizedBox(height: 12),
+      ],
+    );
+    // Search and filters stay pinned above the list. Inside the scroll view
+    // the search field was unmounted when scrolled away and, on refocus
+    // (window activation, summon, autofocus), scrolled the list back to the
+    // top, which made clicks on rows lower down appear to jump.
+    final controls = Column(
+      key: const Key('clip-controls'),
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        _buildCaptureBar(),
+        const SizedBox(height: 10),
         _buildSearch(),
         const SizedBox(height: 10),
         _buildFilters(),
@@ -683,54 +743,71 @@ class _ClipTownHomeState extends State<ClipTownHome> {
       ],
     );
 
-    return CustomScrollView(
-      key: const Key('clip-history-scroll'),
-      slivers: <Widget>[
-        SliverToBoxAdapter(child: header),
-        if (clips.isEmpty)
-          SliverFillRemaining(
-            hasScrollBody: false,
-            child: _EmptyHistory(hasQuery: store.query.trim().isNotEmpty),
-          )
-        else
-          SliverPadding(
-            padding: const EdgeInsets.only(bottom: 88),
-            sliver: SliverList(
-              key: const Key('clip-history-list'),
-              delegate: SliverChildBuilderDelegate((context, index) {
-                if (index.isOdd) return const SizedBox(height: 8);
-                final clipIndex = index ~/ 2;
-                final clip = clips[clipIndex];
-                final selected = clipIndex == selectedIndex;
-                return _ExpandingRow(
-                  key: _rowKeyFor(clip.id),
-                  expanded: clip.id == _expandedClipId,
-                  onCollapse: () => _collapseRow(clip.id),
-                  builder: (context, extraHeight) => _ClipCard(
-                    clip: clip,
-                    now: now,
-                    selected: selected,
-                    extraHeight: extraHeight,
-                    quickCopyLabel: clipIndex < 9
-                        ? '${_isApple ? '⌘' : 'Ctrl+'}${clipIndex + 1}'
-                        : null,
-                    onSelect: () => setState(() {
-                      _selectedIndex = clipIndex;
-                      _expandedClipId = clip.id;
-                    }),
-                    queued: store.queuedIds.contains(clip.id),
-                    onCopy: () => _run(() => clipboardController.copy(clip)),
-                    onToggleQueued: () =>
-                        _runLocal(() => store.toggleQueued(clip.id)),
-                    onTogglePinned: () =>
-                        _runLocal(() => store.togglePinned(clip.id)),
-                    onAction: (action) => _handleClipAction(clip, action),
+    return ClipDropZone(
+      enabled: localWorkAllowed,
+      onDropped: (snapshots) => unawaited(_addDropped(snapshots)),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          controls,
+          Expanded(
+            child: CustomScrollView(
+              key: const Key('clip-history-scroll'),
+              slivers: <Widget>[
+                SliverToBoxAdapter(child: header),
+                if (clips.isEmpty)
+                  SliverFillRemaining(
+                    hasScrollBody: false,
+                    child: _EmptyHistory(
+                      hasQuery: store.query.trim().isNotEmpty,
+                    ),
+                  )
+                else
+                  SliverPadding(
+                    padding: const EdgeInsets.only(bottom: 88),
+                    sliver: SliverList(
+                      key: const Key('clip-history-list'),
+                      delegate: SliverChildBuilderDelegate((context, index) {
+                        if (index.isOdd) return const SizedBox(height: 8);
+                        final clipIndex = index ~/ 2;
+                        final clip = clips[clipIndex];
+                        final selected = clipIndex == selectedIndex;
+                        return _ExpandingRow(
+                          key: _rowKeyFor(clip.id),
+                          expanded: clip.id == _expandedClipId,
+                          onCollapse: () => _collapseRow(clip.id),
+                          builder: (context, fitExtra, overflowExtra) => _ClipCard(
+                            clip: clip,
+                            now: now,
+                            selected: selected,
+                            extraHeight: fitExtra,
+                            overflowExtraHeight: overflowExtra,
+                            quickCopyLabel: clipIndex < 9
+                                ? '${_isApple ? '⌘' : 'Ctrl+'}${clipIndex + 1}'
+                                : null,
+                            onSelect: () => setState(() {
+                              _selectedIndex = clipIndex;
+                              _expandedClipId = clip.id;
+                            }),
+                            queued: store.queuedIds.contains(clip.id),
+                            onCopy: () =>
+                                _run(() => clipboardController.copy(clip)),
+                            onToggleQueued: () =>
+                                _runLocal(() => store.toggleQueued(clip.id)),
+                            onTogglePinned: () =>
+                                _runLocal(() => store.togglePinned(clip.id)),
+                            onAction: (action) =>
+                                _handleClipAction(clip, action),
+                          ),
+                        );
+                      }, childCount: clips.length * 2 - 1),
+                    ),
                   ),
-                );
-              }, childCount: clips.length * 2 - 1),
+              ],
             ),
           ),
-      ],
+        ],
+      ),
     );
   }
 
@@ -814,37 +891,59 @@ class _ClipTownHomeState extends State<ClipTownHome> {
               onChanged: store.setCollectionFilter,
             ),
           ),
-        const SizedBox(width: 4),
-        Tooltip(
-          message: stateMachine.state.captureRequested
-              ? 'Capture is on: everything you copy is saved to your encrypted '
-                    'history (likely secrets are skipped). Switch off to pause.'
-              : 'Capture is paused: nothing you copy is saved. Existing history '
-                    'stays searchable. Switch on to resume.',
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              Switch(
-                key: const Key('capture-toggle'),
-                value: stateMachine.state.captureRequested,
-                onChanged:
-                    !stateMachine.state.permitsLocalWork &&
-                        !stateMachine.state.captureRequested
-                    ? null
-                    : (value) => _run(
-                        () => clipboardController.setCaptureEnabled(value),
-                      ),
-              ),
-              Text(
-                stateMachine.state.captureRequested
-                    ? 'Capture on'
-                    : 'Capture off',
-              ),
-            ],
-          ),
-        ),
-        _buildSaveClipboardButton(),
       ],
+    );
+  }
+
+  /// Capture controls get their own bar above the search box, so they are not
+  /// mistaken for search or filter options.
+  Widget _buildCaptureBar() {
+    return DecoratedBox(
+      key: const Key('capture-bar'),
+      decoration: BoxDecoration(
+        color: const Color(0xff0b1424),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        child: Wrap(
+          spacing: 12,
+          runSpacing: 4,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: <Widget>[
+            Tooltip(
+              message: stateMachine.state.captureRequested
+                  ? 'Capture is on: everything you copy is saved to your '
+                        'encrypted history (likely secrets are skipped). '
+                        'Switch off to pause.'
+                  : 'Capture is paused: nothing you copy is saved. Existing '
+                        'history stays searchable. Switch on to resume.',
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  Switch(
+                    key: const Key('capture-toggle'),
+                    value: stateMachine.state.captureRequested,
+                    onChanged:
+                        !stateMachine.state.permitsLocalWork &&
+                            !stateMachine.state.captureRequested
+                        ? null
+                        : (value) => _run(
+                            () => clipboardController.setCaptureEnabled(value),
+                          ),
+                  ),
+                  Text(
+                    stateMachine.state.captureRequested
+                        ? 'Capture on'
+                        : 'Capture off',
+                  ),
+                ],
+              ),
+            ),
+            _buildSaveClipboardButton(),
+          ],
+        ),
+      ),
     );
   }
 
@@ -976,38 +1075,41 @@ class _ClipTownHomeState extends State<ClipTownHome> {
     }
   }
 
+  Future<void> _addDropped(List<ClipboardSnapshot> snapshots) async {
+    for (final snapshot in snapshots) {
+      await _runLocal(() => store.addManual(snapshot));
+    }
+  }
+
+  /// New clip: typed text, whatever is on the clipboard now, an image file or
+  /// files. Manual additions work even while automatic capture is paused.
   Future<void> _addManualClip() async {
-    var value = '';
-    final text = await showDialog<String>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Add a private local clip'),
-        content: TextFormField(
-          key: const Key('manual-clip-text'),
-          autofocus: true,
-          minLines: 3,
-          maxLines: 10,
-          onChanged: (newValue) => value = newValue,
-          decoration: const InputDecoration(
-            labelText: 'Text',
-            helperText: 'Stored only in the encrypted local history.',
-          ),
-        ),
-        actions: <Widget>[
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            key: const Key('save-manual-clip'),
-            onPressed: () => Navigator.pop(context, value),
-            child: const Text('Save'),
-          ),
-        ],
-      ),
-    );
-    if (text != null && text.trim().isNotEmpty) {
-      await _runLocal(() => store.addText(text));
+    final request = await showNewClipDialog(context);
+    if (request == null || !mounted) return;
+    switch (request) {
+      case NewTextClip(:final text) when text.trim().isNotEmpty:
+        await _runLocal(
+          () => store.addManual(ClipboardSnapshot.text(text: text)),
+        );
+      case NewTextClip():
+        return;
+      case NewClipFromClipboard():
+        final snapshot = await clipboardController.service.read();
+        if (snapshot == null) {
+          store.setStatusMessage('Nothing on the clipboard ClipTown can save');
+          return;
+        }
+        await _runLocal(() => store.addManual(snapshot));
+      case NewImageClip():
+        final snapshot = await pickImageSnapshot();
+        if (snapshot == null) return;
+        await _runLocal(() => store.addManual(snapshot));
+      case NewFilesClip():
+        final snapshot = await pickFilesSnapshot();
+        if (snapshot == null) return;
+        await _runLocal(() => store.addManual(snapshot));
+      case NewDroppedClips(:final snapshots):
+        await _addDropped(snapshots);
     }
   }
 
@@ -1323,6 +1425,7 @@ class _ClipCard extends StatelessWidget {
     required this.selected,
     required this.onSelect,
     this.extraHeight = 0,
+    this.overflowExtraHeight = 0,
     this.quickCopyLabel,
     required this.queued,
     required this.onCopy,
@@ -1338,6 +1441,7 @@ class _ClipCard extends StatelessWidget {
 
   /// Animated extra room while the row is expanded (see _ExpandingRow).
   final double extraHeight;
+  final double overflowExtraHeight;
   final String? quickCopyLabel;
   final bool queued;
   final VoidCallback onCopy;
@@ -1353,6 +1457,8 @@ class _ClipCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         side: selected
             ? BorderSide(color: colors.primary, width: 1.5)
+            : clip.pinned
+            ? BorderSide(color: pinnedAccent.withValues(alpha: 0.55))
             : BorderSide.none,
       ),
       color: selected ? const Color(0xff12223a) : null,
@@ -1376,6 +1482,7 @@ class _ClipCard extends StatelessWidget {
                     key: Key('clip-preview-${clip.id}'),
                     text: clip.summary,
                     extraHeight: extraHeight,
+                    overflowExtraHeight: overflowExtraHeight,
                     style: clip.kind == ClipKind.code
                         ? const TextStyle(fontFamily: 'monospace')
                         : null,
@@ -1385,6 +1492,15 @@ class _ClipCard extends StatelessWidget {
                     spacing: 6,
                     runSpacing: 4,
                     children: <Widget>[
+                      if (clip.pinned)
+                        const _MetaChip(
+                          key: Key('pinned-chip'),
+                          label: '📌 Pinned',
+                          color: pinnedAccent,
+                          tooltip:
+                              'Pinned clips stay at the top and are never '
+                              'removed by the history limit.',
+                        ),
                       _MetaChip(
                         label: clip.kind.label,
                         tooltip: 'Detected content type. Filter by type above.',
@@ -1450,11 +1566,12 @@ class _ClipCard extends StatelessWidget {
                 IconButton(
                   key: Key('pin-${clip.id}'),
                   tooltip: clip.pinned
-                      ? 'Unpin ${clip.title}'
-                      : 'Pin ${clip.title}',
+                      ? 'Pinned: kept at the top and never pruned. Click to unpin.'
+                      : 'Pin: keep at the top and never prune',
                   onPressed: onTogglePinned,
                   icon: Icon(
                     clip.pinned ? Icons.push_pin : Icons.push_pin_outlined,
+                    color: clip.pinned ? pinnedAccent : null,
                   ),
                 ),
                 PopupMenuButton<_ClipAction>(
@@ -1609,10 +1726,13 @@ class _KindAvatar extends StatelessWidget {
 }
 
 class _MetaChip extends StatelessWidget {
-  const _MetaChip({required this.label, this.tooltip});
+  const _MetaChip({super.key, required this.label, this.tooltip, this.color});
 
   final String label;
   final String? tooltip;
+
+  /// Accent for emphasised chips (e.g. pinned); defaults to the neutral tone.
+  final Color? color;
 
   @override
   Widget build(BuildContext context) {
@@ -1621,16 +1741,28 @@ class _MetaChip extends StatelessWidget {
     return message == null ? chip : Tooltip(message: message, child: chip);
   }
 
-  Widget _chip(BuildContext context) => DecoratedBox(
-    decoration: BoxDecoration(
-      color: Theme.of(context).colorScheme.surfaceContainerHighest,
-      borderRadius: BorderRadius.circular(999),
-    ),
-    child: Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-      child: Text(label, style: Theme.of(context).textTheme.labelSmall),
-    ),
-  );
+  Widget _chip(BuildContext context) {
+    final accent = color;
+    final style = Theme.of(context).textTheme.labelSmall;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: accent == null
+            ? Theme.of(context).colorScheme.surfaceContainerHighest
+            : accent.withValues(alpha: 0.18),
+        border: accent == null ? null : Border.all(color: accent),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        child: Text(
+          label,
+          style: accent == null
+              ? style
+              : style?.copyWith(color: accent, fontWeight: FontWeight.w600),
+        ),
+      ),
+    );
+  }
 }
 
 class _StatusBanner extends StatelessWidget {
@@ -1785,12 +1917,15 @@ class _AppTitle extends StatelessWidget {
   );
 }
 
-/// A history row that grows [expandedRowGrowth] (15%) taller while expanded.
+/// A history row that grows taller while expanded: [expandedRowGrowth] (15%)
+/// when its text fits, [expandedOverflowRowGrowth] (25%) when the text is
+/// longer than the collapsed row (the clip text decides, since only it knows
+/// whether its lines overflow at the current width).
 ///
 /// The owner sets [expanded] when the row is clicked; any tap outside the row
-/// calls [onCollapse]. The row measures its own collapsed height at the moment
-/// it expands and animates the extra room in and out, handing the animated
-/// amount to [builder] (which gives it to the clip text).
+/// calls [onCollapse]. The row measures its own collapsed height right after it
+/// expands and animates an expansion progress (0 to 1), handing [builder] the
+/// extra room for both cases.
 class _ExpandingRow extends StatefulWidget {
   const _ExpandingRow({
     super.key,
@@ -1801,7 +1936,12 @@ class _ExpandingRow extends StatefulWidget {
 
   final bool expanded;
   final VoidCallback onCollapse;
-  final Widget Function(BuildContext context, double extraHeight) builder;
+  final Widget Function(
+    BuildContext context,
+    double fitExtraHeight,
+    double overflowExtraHeight,
+  )
+  builder;
 
   @override
   State<_ExpandingRow> createState() => _ExpandingRowState();
@@ -1841,7 +1981,7 @@ class _ExpandingRowState extends State<_ExpandingRow> {
 
   @override
   Widget build(BuildContext context) {
-    final target = widget.expanded ? _collapsedHeight * expandedRowGrowth : 0.0;
+    final target = widget.expanded && _collapsedHeight > 0 ? 1.0 : 0.0;
     return TapRegion(
       onTapOutside: (_) {
         if (widget.expanded) widget.onCollapse();
@@ -1850,8 +1990,15 @@ class _ExpandingRowState extends State<_ExpandingRow> {
         tween: Tween<double>(end: target),
         duration: const Duration(milliseconds: 160),
         curve: Curves.easeOutCubic,
-        builder: (context, extra, _) => widget.builder(context, extra),
+        builder: (context, progress, _) => widget.builder(
+          context,
+          _collapsedHeight * expandedRowGrowth * progress,
+          _collapsedHeight * expandedOverflowRowGrowth * progress,
+        ),
       ),
     );
   }
 }
+
+/// Brand pink used to make pinned clips stand out (icon, chip, row edge).
+const Color pinnedAccent = Color(0xffff2e97);
