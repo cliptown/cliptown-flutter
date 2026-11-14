@@ -7,26 +7,10 @@ import '../history/capture_policy.dart';
 import '../history/clip_item.dart';
 import '../history/clip_repository.dart';
 import '../history/clipboard_snapshot.dart';
+import '../history/text_dedupe.dart';
+import 'clip_store_types.dart';
 
-class CaptureResult {
-  const CaptureResult._({
-    required this.accepted,
-    this.item,
-    this.rejectionReason,
-    this.refreshedExisting = false,
-  });
-
-  const CaptureResult.accepted(ClipItem item, {bool refreshedExisting = false})
-    : this._(accepted: true, item: item, refreshedExisting: refreshedExisting);
-
-  const CaptureResult.rejected(CaptureRejectionReason reason)
-    : this._(accepted: false, rejectionReason: reason);
-
-  final bool accepted;
-  final ClipItem? item;
-  final CaptureRejectionReason? rejectionReason;
-  final bool refreshedExisting;
-}
+export 'clip_store_types.dart';
 
 class ClipStore extends ChangeNotifier {
   ClipStore({
@@ -225,67 +209,92 @@ class ClipStore extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<CaptureResult> capture(ClipboardSnapshot snapshot) =>
-      _enqueue(() async {
-        if (_vaultLocked) {
-          return const CaptureResult.rejected(
-            CaptureRejectionReason.vaultUnavailable,
-          );
-        }
-        final rejection = _policy.evaluate(snapshot);
-        if (rejection != null) {
-          _statusMessage = captureRejectionLabel(rejection);
-          notifyListeners();
-          return CaptureResult.rejected(rejection);
-        }
+  Future<CaptureResult> capture(
+    ClipboardSnapshot snapshot, {
+    bool userInitiated = false,
+  }) => _enqueue(() async {
+    if (_vaultLocked) {
+      return const CaptureResult.rejected(
+        CaptureRejectionReason.vaultUnavailable,
+      );
+    }
+    final policy = userInitiated
+        ? _policy.copyWith(captureEnabled: true)
+        : _policy;
+    final rejection = policy.evaluate(snapshot);
+    if (rejection != null) {
+      _statusMessage = captureRejectionLabel(rejection);
+      notifyListeners();
+      return CaptureResult.rejected(rejection);
+    }
 
-        final now = _clock().toUtc();
-        final encodedData = snapshot.data == null
-            ? null
-            : base64Encode(snapshot.data!);
-        final duplicateIndex = _clips.indexWhere(
-          (clip) => clip.fingerprintMaterial == snapshot.fingerprintMaterial,
-        );
-        final existing = duplicateIndex < 0 ? null : _clips[duplicateIndex];
-        final item = ClipItem(
-          id: existing?.id ?? _nextId(now),
-          kind: snapshot.kind,
-          title:
-              existing?.title ??
-              defaultClipTitle(
-                snapshot.kind,
-                text: snapshot.text,
-                fileUris: snapshot.fileUris,
-              ),
-          text: snapshot.text,
-          html: snapshot.html,
-          dataBase64: encodedData,
-          mimeType: snapshot.mimeType,
-          fileUris: List<String>.of(snapshot.fileUris),
-          sourceApplication: snapshot.sourceApplication,
-          createdAt: now,
-          lastUsedAt: now,
-          pinned: existing?.pinned ?? false,
-          collection: existing?.collection,
-          tags: existing?.tags ?? const <String>{},
-        );
-        item.validate();
+    final now = _clock().toUtc();
+    final encodedData = snapshot.data == null
+        ? null
+        : base64Encode(snapshot.data!);
+    // Text: every clip whose text is verbatim equal is a duplicate (see
+    // text_dedupe.dart). Images/files: only an identical fingerprint.
+    final textKey = snapshotTextKey(snapshot);
+    final duplicates =
+        _clips
+            .where(
+              (clip) => textKey != null
+                  ? clipTextKey(clip) == textKey
+                  : clip.fingerprintMaterial == snapshot.fingerprintMaterial,
+            )
+            .toList()
+          ..sort(compareYoungestFirst);
+    final existing = duplicates.isEmpty ? null : duplicates.first;
+    final captured = ClipItem(
+      id: existing?.id ?? _nextId(now),
+      kind: snapshot.kind,
+      title:
+          existing?.title ??
+          defaultClipTitle(
+            snapshot.kind,
+            text: snapshot.text,
+            fileUris: snapshot.fileUris,
+          ),
+      text: snapshot.text,
+      html: snapshot.html,
+      dataBase64: encodedData,
+      mimeType: snapshot.mimeType,
+      fileUris: List<String>.of(snapshot.fileUris),
+      sourceApplication: snapshot.sourceApplication,
+      createdAt: now,
+      lastUsedAt: now,
+      pinned: existing?.pinned ?? false,
+      collection: existing?.collection,
+      tags: existing?.tags ?? const <String>{},
+    );
+    // The new copy is the youngest; it keeps what the user set on any of
+    // the older copies, which are removed.
+    final item = duplicates.length > 1
+        ? mergeDuplicateMetadata(captured, duplicates.skip(1))
+        : captured;
+    item.validate();
+    final removedIds = duplicates.map((clip) => clip.id).toSet();
 
-        await _commit(() {
-          if (duplicateIndex >= 0) _clips.removeAt(duplicateIndex);
-          _clips.add(item);
-          _statusMessage = duplicateIndex >= 0
-              ? 'Existing item moved to the top'
-              : '${item.kind.label} captured';
-        });
-        return CaptureResult.accepted(
-          item,
-          refreshedExisting: duplicateIndex >= 0,
-        );
-      });
+    await _commit(() {
+      _clips.removeWhere((clip) => removedIds.contains(clip.id));
+      _queuedIds.removeWhere((id) => removedIds.contains(id) && id != item.id);
+      _clips.add(item);
+      _statusMessage = duplicates.isNotEmpty
+          ? 'Existing item moved to the top'
+          : '${item.kind.label} captured';
+    });
+    return CaptureResult.accepted(
+      item,
+      refreshedExisting: duplicates.isNotEmpty,
+    );
+  });
 
   Future<CaptureResult> addText(String text) =>
       capture(ClipboardSnapshot.text(text: text));
+
+  /// A clip the user added by hand (text, image or files); see [capture].
+  Future<CaptureResult> addManual(ClipboardSnapshot snapshot) =>
+      capture(snapshot, userInitiated: true);
 
   Future<void> togglePinned(String id) => _enqueue(() async {
     await _commit(() {
@@ -350,12 +359,7 @@ class ClipStore extends ChangeNotifier {
     }
     if (text == existing.text) return;
     final duplicate = _clips.indexWhere(
-      (clip) =>
-          clip.id != id &&
-          clip.kind != ClipKind.files &&
-          clip.text == text &&
-          clip.html == null &&
-          clip.dataBase64 == null,
+      (clip) => clip.id != id && clipTextKey(clip) == text,
     );
     if (duplicate >= 0) {
       // Two clips with identical content would break capture de-duplication.
@@ -463,28 +467,35 @@ class ClipStore extends ChangeNotifier {
 
   /// The [limit] most recently used clips, newest first, without sorting or
   /// copying the whole history.
-  List<ClipItem> mostRecent(int limit) {
-    final top = <ClipItem>[];
-    for (final clip in _clips) {
-      var index = top.length;
-      while (index > 0 &&
-          top[index - 1].sortTimestamp.isBefore(clip.sortTimestamp)) {
-        index -= 1;
+  List<ClipItem> mostRecent(int limit) => mostRecentOf(_clips, limit);
+
+  /// Background de-duplication sweep: removes older verbatim-text duplicates
+  /// (keeping the youngest, with merged pin/tags/collection). Duplicates can
+  /// predate this rule, arrive by restore/import, or be created by edits on
+  /// another device. Returns how many clips were removed.
+  Future<int> dedupeText() => _enqueue(() async {
+    if (_vaultLocked || !_initialized) return 0;
+    final plan = planTextDedupe(_clips);
+    if (plan.isEmpty) return 0;
+    await _commit(() {
+      _clips.removeWhere((clip) => plan.removedIds.contains(clip.id));
+      for (final (index, clip) in _clips.indexed) {
+        final keeper = plan.keepers[clip.id];
+        if (keeper != null) _clips[index] = keeper;
       }
-      if (index < limit) {
-        top.insert(index, clip);
-        if (top.length > limit) top.removeLast();
-      }
-    }
-    return top;
-  }
+      _queuedIds.removeWhere(plan.removedIds.contains);
+    });
+    return plan.removedIds.length;
+  });
 
   /// Undo for [delete]: puts a removed clip back unless an identical clip
   /// was captured in the meantime.
   Future<void> restore(ClipItem clip) => _enqueue(() async {
+    final textKey = clipTextKey(clip);
     if (_clips.any(
       (existing) =>
           existing.id == clip.id ||
+          (textKey != null && clipTextKey(existing) == textKey) ||
           existing.fingerprintMaterial == clip.fingerprintMaterial,
     )) {
       return;
@@ -575,10 +586,4 @@ class ClipStore extends ChangeNotifier {
     });
     return completer.future;
   }
-}
-
-/// A rejected user edit whose [message] is safe to show: it is a fixed string
-/// and never contains clipboard content (unlike e.g. a JSON decode error).
-class ClipInputException extends FormatException {
-  const ClipInputException(super.message);
 }

@@ -42,6 +42,8 @@ Usage: install-macos.sh [--from-source [--ref <ref>]] [--version <tag>] [--dest 
   --dest <dir>     install directory (default: /Applications, else ~/Applications)
   --no-launch      do not open ClipTown afterwards
   --open-at-login  also start ClipTown automatically when you log in (macOS 13+)
+  --stable-signing re-sign with a per-Mac "ClipTown Local Signing" identity so macOS
+                   keychain access survives updates (one "Always Allow", then no prompts)
 EOF
 }
 
@@ -49,6 +51,82 @@ EOF
 # reach git or the release URL.
 valid_ref() {
   [[ "$1" =~ ^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$ ]] && [[ "$1" != *..* ]]
+}
+
+# --- Stable local code signing -------------------------------------------
+# Unsigned (ad-hoc) builds get a new code identity every build, so the macOS
+# keychain asks again for ClipTown's vault key after each update. A self-signed
+# identity kept on this Mac gives every build the same designated requirement
+# (bundle id + certificate), so one "Always Allow" lasts across updates. It
+# lives in its own keychain, which is on the search list only while signing.
+readonly SIGNING_DIR="$HOME/.config/cliptown/signing"
+readonly SIGNING_KEYCHAIN="$SIGNING_DIR/cliptown-signing.keychain-db"
+readonly SIGNING_CN="ClipTown Local Signing"
+
+have_local_signing() {
+  [ -f "$SIGNING_KEYCHAIN" ] && [ -s "$SIGNING_DIR/identity" ] && [ -s "$SIGNING_DIR/keychain-pass" ]
+}
+
+create_local_signing() {
+  have openssl || die "openssl is required for --stable-signing"
+  say "Creating the '$SIGNING_CN' identity (this Mac only)"
+  mkdir -p "$SIGNING_DIR"
+  chmod 700 "$SIGNING_DIR"
+  local tmp pass
+  tmp="$(mktemp -d "$work/signing.XXXXXX")"
+  pass="$(openssl rand -hex 24)"
+  ( umask 077; printf '%s' "$pass" >"$SIGNING_DIR/keychain-pass" )
+  openssl req -x509 -newkey rsa:2048 -nodes -days 3650 -subj "/CN=$SIGNING_CN" \
+    -keyout "$tmp/key.pem" -out "$tmp/cert.pem" \
+    -addext "keyUsage=critical,digitalSignature" \
+    -addext "extendedKeyUsage=critical,codeSigning" \
+    -addext "basicConstraints=critical,CA:false" 2>/dev/null
+  openssl pkcs12 -export -legacy -inkey "$tmp/key.pem" -in "$tmp/cert.pem" \
+    -out "$tmp/id.p12" -passout "pass:$pass" 2>/dev/null ||
+    openssl pkcs12 -export -inkey "$tmp/key.pem" -in "$tmp/cert.pem" \
+      -out "$tmp/id.p12" -passout "pass:$pass"
+  security create-keychain -p "$pass" "$SIGNING_KEYCHAIN"
+  security set-keychain-settings "$SIGNING_KEYCHAIN"
+  security unlock-keychain -p "$pass" "$SIGNING_KEYCHAIN"
+  security import "$tmp/id.p12" -k "$SIGNING_KEYCHAIN" -P "$pass" -T /usr/bin/codesign >/dev/null
+  security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$pass" "$SIGNING_KEYCHAIN" >/dev/null
+  openssl x509 -in "$tmp/cert.pem" -noout -fingerprint -sha1 |
+    sed 's/.*=//; s/://g' >"$SIGNING_DIR/identity"
+  rm -rf "$tmp"
+}
+
+# Re-signs nested code, then the app with the entitlements it already has.
+resign_with_local_identity() {
+  local app="$1" identity pass entitlements keychain
+  identity="$(cat "$SIGNING_DIR/identity")"
+  pass="$(cat "$SIGNING_DIR/keychain-pass")"
+  entitlements="$work/entitlements.plist"
+  codesign -d --entitlements :- "$app" >"$entitlements" 2>/dev/null ||
+    die "could not read the app's entitlements"
+  security unlock-keychain -p "$pass" "$SIGNING_KEYCHAIN"
+  # codesign only finds identities in keychains on the user search list, so
+  # add ours for the duration of signing and always put the list back.
+  original_search_list=()
+  while IFS= read -r keychain; do
+    keychain="${keychain#"${keychain%%[![:space:]]*}"}"
+    keychain="${keychain//\"/}"
+    [ -n "$keychain" ] && original_search_list+=("$keychain")
+  done < <(security list-keychains -d user)
+  trap 'restore_search_list; rm -rf "$work"' EXIT
+  security list-keychains -d user -s "${original_search_list[@]}" "$SIGNING_KEYCHAIN"
+  find "$app/Contents/Frameworks" -maxdepth 1 \( -name '*.framework' -o -name '*.dylib' \) \
+    -exec codesign --force --sign "$identity" {} \; 2>/dev/null
+  codesign --force --sign "$identity" --entitlements "$entitlements" "$app" 2>/dev/null ||
+    die "signing with '$SIGNING_CN' failed"
+  restore_search_list
+  trap 'rm -rf "$work"' EXIT
+  say "Signed with '$SIGNING_CN' (keychain access will survive updates)"
+}
+
+original_search_list=()
+restore_search_list() {
+  [ "${#original_search_list[@]}" -gt 0 ] || return 0
+  security list-keychains -d user -s "${original_search_list[@]}"
 }
 
 bundle_id_of() {
@@ -128,6 +206,7 @@ main() {
   dest=""
   launch=1
   open_at_login=0
+  stable_signing=0
 
   while [ $# -gt 0 ]; do
     case "$1" in
@@ -137,6 +216,7 @@ main() {
       --dest) [ $# -ge 2 ] || die "--dest needs a value"; dest="$2"; shift ;;
       --no-launch) launch=0 ;;
       --open-at-login) open_at_login=1 ;;
+      --stable-signing) stable_signing=1 ;;
       -h|--help) usage; exit 0 ;;
       *) die "unknown option: $1 (see --help)" ;;
     esac
@@ -168,6 +248,13 @@ main() {
 
   [ "$(bundle_id_of "$app_path")" = "$BUNDLE_ID" ] ||
     die "refusing to install: the bundle is not $BUNDLE_ID"
+
+  if [ "$stable_signing" -eq 1 ] && ! have_local_signing; then
+    create_local_signing
+  fi
+  if have_local_signing; then
+    resign_with_local_identity "$app_path"
+  fi
 
   if [ -z "$dest" ]; then
     # Upgrade an existing install in place rather than creating a second copy.

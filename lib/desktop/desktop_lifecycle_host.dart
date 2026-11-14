@@ -191,7 +191,7 @@ class DesktopLifecycleHost
       try {
         await hotKeyManager.register(
           desktopTrayHotKey(),
-          keyDownHandler: (_) => unawaited(showTrayMenu()),
+          keyDownHandler: (_) => unawaited(showTrayMenu(flash: true)),
         );
       } on Object {
         // The tray stays reachable by clicking its icon.
@@ -202,14 +202,18 @@ class DesktopLifecycleHost
   }
 
   /// Opens the tray menu (recent clips, open/hide/quit) from anywhere.
-  Future<void> showTrayMenu() async {
+  late final TrayMenuToggle _trayMenuToggle = TrayMenuToggle(
+    trayManager.popUpContextMenu,
+  );
+
+  /// Opens the tray menu (open/hide/quit, recent clips) whether or not the
+  /// window is showing; called again while it is open, it leaves it closed.
+  /// [flash] is for the keyboard shortcut, where the user may not be looking
+  /// at the menu bar.
+  Future<void> showTrayMenu({bool flash = false}) async {
     if (!_trayReady || controller.isQuitting) return;
-    unawaited(_flasher.flash());
-    try {
-      await trayManager.popUpContextMenu();
-    } on Object {
-      // Feedback only; the icon remains clickable.
-    }
+    if (flash && !_trayMenuToggle.isOpen) unawaited(_flasher.flash());
+    await _trayMenuToggle.toggle();
   }
 
   bool _dismissHotKeyHeld = false;
@@ -241,7 +245,7 @@ class DesktopLifecycleHost
   Future<void> _configureTray() async {
     await _PlatformTrayIconPort().setIcon(TrayIconVariant.normal);
     await trayManager.setToolTip(
-      'ClipTown clipboard history (${summonShortcutLabel(isMacOS: Platform.isMacOS)})',
+      'ClipTown — click for recent clips (${trayShortcutLabel(isMacOS: Platform.isMacOS)})',
     );
     await trayManager.setContextMenu(
       buildTrayMenu(
@@ -269,12 +273,14 @@ class DesktopLifecycleHost
 
   @override
   void onTrayIconMouseDown() {
-    unawaited(summon());
+    // Clicking the icon toggles its menu (Open ClipTown is the first item),
+    // regardless of whether the window is open or in front.
+    unawaited(showTrayMenu());
   }
 
   @override
   void onTrayIconRightMouseDown() {
-    unawaited(trayManager.popUpContextMenu());
+    unawaited(showTrayMenu());
   }
 
   @override

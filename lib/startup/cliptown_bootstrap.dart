@@ -11,6 +11,7 @@ import '../desktop/launch_at_login.dart';
 import '../desktop/linux_desktop_entry.dart';
 import '../history/clip_item.dart';
 import '../history/clip_repository.dart';
+import '../history/text_dedupe_worker.dart';
 import '../history/sqlite_clip_repository.dart';
 import '../src/clip_store.dart';
 import '../state/app_state_machine.dart';
@@ -26,6 +27,7 @@ final class ClipTownStartupResources {
     required this.desktopLifecycleHost,
     required this.desktopBackgroundEnabled,
     required this.desktopHotKeyEnabled,
+    this.textDedupeWorker,
   });
 
   final ClipStore store;
@@ -36,12 +38,17 @@ final class ClipTownStartupResources {
   final bool desktopBackgroundEnabled;
   final bool desktopHotKeyEnabled;
 
+  /// Background verbatim-text de-duplication (see TextDedupeWorker).
+  final TextDedupeWorker? textDedupeWorker;
+
   void disposeFlutterOwned() {
+    unawaited(textDedupeWorker?.dispose());
     clipboardController.dispose();
     store.dispose();
   }
 
   Future<void> disposeAll() async {
+    await textDedupeWorker?.dispose();
     clipboardController.dispose();
     stateMachine.dispose();
     store.dispose();
@@ -100,8 +107,10 @@ Future<ClipTownStartupResources> bootstrapClipTownRuntime({
       stateMachine: stateMachine,
     );
     await clipboardController.initialize();
+    final textDedupeWorker = TextDedupeWorker(store)..start();
 
     return ClipTownStartupResources(
+      textDedupeWorker: textDedupeWorker,
       store: store,
       stateMachine: stateMachine,
       runtimeKind: runtime,
@@ -169,7 +178,7 @@ class _ClipTownBootstrapAppState extends State<ClipTownBootstrapApp> {
     } on TimeoutException {
       _fail(
         attempt,
-        'The encrypted clipboard vault took too long to open. It remains locked; retry when the device is ready.',
+        'Still opening the encrypted vault. If macOS is asking to use “flutter_secure_storage_service” in your keychain, enter your Mac login password and choose Always Allow — ClipTown continues on its own. Your history stays locked until then.',
       );
       unawaited(_acceptLateCompletion(source, attempt));
     } catch (_) {
