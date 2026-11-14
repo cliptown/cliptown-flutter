@@ -1,4 +1,3 @@
-import 'package:flutter/widgets.dart';
 import 'package:ores_otel_flutter/ores_otel_flutter.dart';
 
 import 'startup/cliptown_bootstrap.dart';

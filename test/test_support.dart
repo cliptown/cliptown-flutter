@@ -39,8 +39,10 @@ List<ClipItem> demoClipItems() {
 }
 
 Future<ClipStore> createDemoStore() async {
+  final fixtureNow = DateTime.utc(2026, 8, 22, 13);
   final store = ClipStore(
     repository: MemoryClipRepository(seed: demoClipItems()),
+    clock: () => fixtureNow,
   );
   await store.initialize();
   return store;

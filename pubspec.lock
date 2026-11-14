@@ -558,6 +558,24 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "9.3.0"
+  ores_otel_flutter:
+    dependency: "direct main"
+    description:
+      path: "."
+      ref: c7cf306eee7b07408057753251f937ea58f8e9ed
+      resolved-ref: c7cf306eee7b07408057753251f937ea58f8e9ed
+      url: "https://github.com/ores-otel/ores-otel-flutter.git"
+    source: git
+    version: "0.1.0"
+  oresoftware_next_loggers:
+    dependency: transitive
+    description:
+      path: "sdk/dart"
+      ref: "91bf4b8a48773799f10707bf1c6ae7336a393bde"
+      resolved-ref: "91bf4b8a48773799f10707bf1c6ae7336a393bde"
+      url: "https://github.com/ores-otel/ores.otel.log.git"
+    source: git
+    version: "0.1.0"
   package_config:
     dependency: transitive
     description:
