@@ -1,0 +1,89 @@
+schema_version = 1
+project = "cliptown-flutter"
+model = "app-lifecycle-v2"
+language = "quint"
+spec = "formal/app_lifecycle.qnt"
+tests = "formal/app_lifecycle_test.qnt"
+main = "app_lifecycle"
+init = "init"
+step = "step"
+invariants = ["app_lifecycle_safety"]
+witnesses = [
+  "unlocked_reached",
+  "running_sync_reached",
+  "retry_backoff_reached",
+  "capture_ready_reached",
+  "capture_monitoring_reached",
+  "capture_faulted_reached",
+  "mobile_background_locked_reached",
+  "desktop_background_unlocked_reached",
+  "revocation_reached",
+  "controlled_fault_reached",
+  "stopped_reached",
+]
+
+[bounds]
+runtime_kinds = 2
+lifecycle_phases = 6
+authentication_states = 4
+local_device_states = 4
+vault_states = 4
+sync_states = 4
+capture_states = 4
+booleans = 4
+
+[assumptions]
+event_loop = "Dart dispatch is serialized; reentrant dispatch is rejected"
+native_effects = "native errors are reported as nativeFailure before more sensitive work"
+desktop_background = "reviewed desktop tray work may remain unlocked; mobile background always locks"
+capture_authority = "native clipboard reads and monitoring start only after the shared reducer grants capture capability"
+async_refinement = "awaited clipboard effects discard stale completions when the state revision changes"
+revocation = "device revocation destroys local key access and is monotonic"
+fairness = "no unbounded liveness or eventual-delivery claim"
+
+[toolchain]
+quint = "0.32.0"
+node = "22"
+java = "21"
+flutter = "3.44.3"
+
+[simulation]
+max_samples = 15000
+max_steps = 35
+seed = "0xaa9749ae95a8a5c9"
+
+[verification]
+backend = "apalache"
+claim = "bounded"
+max_steps = 14
+profile = "push-scheduled-manual"
+
+[traces]
+format = "itf"
+model_based_testing_metadata = true
+count = 12
+max_steps = 30
+seed = "0xaa9749ae95a8a5c9"
+
+[adapters.dart]
+strategy = "itf-json-driver"
+target = "tool/replay_formal_traces.dart"
+working_directory = "."
+command = ["flutter", "test", "test/formal_trace_replay_test.dart"]
+implementation = "lib/state/app_state_machine.dart"
+observable_state = [
+  "runtime",
+  "lifecycle",
+  "authentication",
+  "local_device",
+  "vault",
+  "sync",
+  "capture",
+  "capture_requested",
+  "online",
+  "window_visible",
+  "revocation_observed",
+  "revision",
+]
+status = "active"
+issue = "DEN-42"

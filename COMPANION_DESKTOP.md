@@ -22,6 +22,16 @@ For every desktop-facing feature:
 
 Until the Rust repository is published, feature plans must reserve its companion scope rather than treating Flutter completion as full desktop parity.
 
+## Lifecycle state authority
+
+The Flutter desktop window/tray host reports foreground, background, shutdown,
+and native-failure events to `lib/state/app_state_machine.dart`. Close-to-tray
+is an explicit desktop background state, not an independent boolean. Mobile
+background always locks and disables sync; desktop background may retain an
+unlocked vault only while the shared authentication, device-trust, and sync
+invariants continue to hold. The matching Quint model and Dart ITF replay live
+under `formal/`.
+
 ## Project routing
 
 - GitHub Project: [`cliptown-project` — Project 1](https://github.com/orgs/cliptown/projects/1)

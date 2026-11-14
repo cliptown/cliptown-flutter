@@ -2,17 +2,102 @@
 
 Shared Flutter product surface for ClipTown desktop and mobile clients: encrypted clipboard history, device management, recovery, local search, and zero-knowledge synchronization.
 
+The app also contains a foreground-only Bluetooth LE proximity transport for
+encrypted clipboard and opaque Shared Auth/3FA requests. See
+[`docs/bluetooth-proximity.md`](docs/bluetooth-proximity.md); Bluetooth never
+counts as an authentication factor and mocked CI is not physical-radio proof.
+
 ## Current foundation
 
-The application provides a testable local ClipTown shell with search, pinning, clip-kind previews, and a clear disconnected-sync state. On macOS, Windows, and supported Linux desktops it also installs a system-tray lifecycle: closing the main window hides it without terminating the process, and **Open ClipTown** restores a normal resizable 1100×760 window in the center of the active display. **Quit ClipTown** is the explicit process-exit path. It does not claim cloud synchronization or production encryption until the authentication, key-management, and SDK contracts are integrated.
+The application provides a testable local ClipTown shell with hybrid lexical/vector search, pinning, collections, a sequential-paste queue, configurable history size, safe transforms, rich clip-kind previews, and automatic text/image/file capture on supported desktops. On macOS, Windows, and supported Linux desktops it also installs a system-tray lifecycle: closing the main window hides it without terminating the process, and **Open ClipTown** restores a normal resizable 1100×760 window in the center of the active display. **Quit ClipTown** is the explicit process-exit path.
+
+Local clipboard records and 384-dimensional text vectors are stored in an SQLite3MultipleCiphers database. A random 256-bit database key is kept in platform secure storage; an existing database with a missing or invalid key is locked rather than reset or opened as plaintext. The deterministic `cliptown-fnv1a-v1` embedding is a private, offline retrieval baseline, not a claim of model-quality semantic understanding. Cloud synchronization remains disabled until authenticated device key management, encrypted R2 object transfer, and Postgres/CockroachDB backup contracts are implemented and verified.
+
+The Apple release entitlement files deliberately declare an empty
+`keychain-access-groups` array so Keychain uses the app's default access group. Do
+not insert an application identifier prefix until the corresponding Apple team,
+provisioning profile, and signed release identity are configured: any restricted
+keychain access-group entitlement on an ad-hoc-signed macOS debug build is rejected
+by taskgated before Flutter starts. macOS debug/profile builds therefore use the
+encrypted login Keychain without the data-protection access-group entitlement;
+signed release builds opt into the data-protection Keychain. Hosted macOS E2E proves
+debug Keychain persistence, while signed release acceptance must separately prove
+the provisioned production path.
+
+The independent native Rust/GPUI desktop client lives in [`cliptown-desktop.rs`](https://github.com/cliptown/cliptown-desktop.rs). The Rust and Flutter desktop applications are peer products: neither is a rewrite, compatibility shim, fallback, or successor to the other. Their behavior is validated against shared fixtures while each keeps its own UI toolkit, storage implementation, release artifacts, and roadmap.
 
 The sibling `cliptown-interfaces` checkout is required at `../cliptown-interfaces` for the generated Dart wire package.
+
+## Install on macOS
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/cliptown/cliptown-flutter/main/scripts/install-macos.sh | bash
+```
+
+Add `-s -- --open-at-login` to also start ClipTown automatically when you log in (macOS 13+; ClipTown registers itself as a login item and starts hidden in the menu bar).
+
+Add `--stable-signing` to keep macOS keychain access across updates: builds are not signed with an Apple Developer ID yet, so macOS sees every update as a new app and asks once for your **login password** to let ClipTown read its vault key (the "flutter_secure_storage_service" prompt). With `--stable-signing` the installer creates a self-signed "ClipTown Local Signing" identity for this Mac (in its own keychain under `~/.config/cliptown/signing`) and signs every install with it, so after one **Always Allow** there are no more prompts. If that prompt appears at login, ClipTown waits for your answer and continues on its own.
+
+The installer downloads the latest GitHub Release (`ClipTown-macos.zip`), verifies its SHA-256 checksum, and installs `ClipTown.app` into `/Applications` (or `~/Applications`). Add `-s -- --from-source` to clone this repository and the pinned `cliptown-interfaces` revision and build locally instead (needs Xcode, CocoaPods and Flutter); this is also the automatic fallback when no release has been published yet. Releases are produced by `.github/workflows/macos-release.yml` on `v*` tags.
+
+Current builds are ad-hoc signed (`scripts/build-macos-adhoc.sh`): they use `macos/Runner/AdHoc.entitlements` and keep the vault key in the encrypted login Keychain (`--dart-define=CLIPTOWN_MACOS_DATA_PROTECTION_KEYCHAIN=false`), because the data-protection Keychain requires a provisioned Developer ID signature. ClipTown runs fully locally — no account, login, or cloud service is needed.
+
+## Desktop shortcuts and tray
+
+| Keys (macOS / Windows, Linux) | Scope | Action |
+| --- | --- | --- |
+| ⌥C / Alt+C | system-wide | Open ClipTown with search focused; the tray icon flashes |
+| ⌥O / Alt+O | system-wide | Open the tray menu: Open, Hide, Quit, then the 10 most recent clips |
+| ⌥X / Alt+X | while ClipTown or its tray menu is open | Close the tray menu and hide ClipTown to the tray (it keeps capturing); other apps keep ⌥X whenever ClipTown is hidden |
+| ↑ ↓, Page Up/Down | in ClipTown | Move the selection |
+| Return | in ClipTown | Copy the selected clip and hide, ready to paste (a focused button gets Return instead) |
+| ⌘1…⌘9 / Ctrl+1…9 | in ClipTown | Copy that row and hide |
+| Esc | in ClipTown | Clear the search, then hide |
+| ⌥P / Alt+P, ⌥⌫ / Alt+Backspace | in ClipTown | Pin / delete the selected clip (⌥⌫ still deletes a word while the search has text; every delete can be undone) |
+| ⌘F / Ctrl+F | in ClipTown | Focus search |
+| hold ⌥ / Alt | in ClipTown | Show tooltips instantly while hovering (every control has one) |
+
+⌥C and ⌥O are always global; ⌥X is global only while ClipTown is showing, so other apps keep ⌥X (and all editing keys) whenever ClipTown is hidden. Clicking the tray (menu-bar) icon opens its menu whether or not the window is showing, and clicking it again closes the menu. The menu (also ⌥O) starts with Open, Hide and Quit, then lists the ten most recent clips (click to copy; likely secrets are masked), then pause/resume capture. **Open ClipTown at login** (Privacy and capture settings) starts it hidden in the tray via `SMAppService` on macOS 13+, the `HKCU\…\Run` key on Windows, and an XDG autostart entry on Linux.
+
+On Linux, ClipTown adds itself to the app launcher (`~/.local/share/applications/cliptown.desktop`, with its icon) the first time it runs, and refreshes the entry if the bundle moves; Flatpak/Snap builds keep their own entry.
+
+Text clips are de-duplicated: two clips are duplicates only when their text is verbatim equal (whitespace and case included), and the youngest copy wins while keeping any pin, tags or collection set on older copies. This happens as clipboard changes stream in, at capture, and in a background sweep shortly after start-up and after the history has been quiet for a moment. Images and files are not merged by this rule.
+
+Clicking a clip row makes it taller: 25% when its text is longer than the row (it then scrolls inside the row, with the scrollbar at the right edge, visible only while the pointer is over the text), 15% otherwise. Clicking anywhere else, or Esc, shrinks it back. Search and filters stay pinned above the list.
+
+**New clip** adds typed text, whatever is on the clipboard now (text, image or files), an image file or files. You can also drag images, files or text onto the ClipTown window or the New clip dialog. Manual additions work even while automatic capture is paused. Capture on/off and Save clipboard now sit in their own bar above the search box; results such as "Existing item moved to the top" appear as a 4-second toast with a close button. Pinned clips are marked in pink (pin icon, chip and outline).
+
+## Formally checked app state
+
+`lib/state/app_state_machine.dart` is the single transition authority for the
+shared mobile and desktop control plane. It models app lifecycle,
+authentication, local-device trust, vault availability, network availability,
+window visibility, clipboard-capture intent/effects, and sync. The same machine
+instance is injected into Flutter lifecycle handling, the desktop tray/window
+host, and `ClipboardController`; construction rejects split authorities. Every
+event is handled by one pure total reducer:
+valid transitions advance a monotonic revision; invalid and reentrant events
+are rejected without changing state; native failures enter a controlled,
+locked, capture-disabled, sync-disabled fault state. Offline local capture is
+distinct from authenticated cloud sync, and asynchronous clipboard reads or
+watcher starts are discarded when a newer state revision invalidates them.
+When local capability is absent, loaded history is not rendered and persistent
+UI mutations are rejected through the same revision-checked gate.
+
+The product-owned Quint specification in `formal/app_lifecycle.qnt` checks the
+same safety gates. CI typechecks deterministic scenarios, explores critical
+states, performs bounded Apalache model checking, generates ITF traces, and
+replays every trace through the production Dart reducer. Dart tests separately
+exhaust every reachable finite control state against every event. See
+`formal/README.md` for the precise bounds, assumptions, and claim limitations.
 
 ## Security foundation
 
 - `lib/security/security_models.dart` defines revisioned pending/active/suspended/revoked devices, backup email/phone summaries, recovery challenges, and local biometric/passkey/PIN policy.
 - `lib/security/security_services.dart` defines narrow platform/provider boundaries for Signal Protocol, secure key storage, device enrollment/revocation, and recovery channels. It implements no cryptographic primitive.
 - `lib/security/encrypted_object_planner.dart` creates bounded, contiguous encrypted upload plans with randomized Cloudflare R2 storage paths. Actual AEAD and key wrapping remain in reviewed providers.
+- `lib/history/sqlite_clip_repository.dart` stores encrypted rich history plus Float32 text vectors in SQLite and refuses plaintext fallback.
+- `lib/clipboard/clipboard_service.dart` monitors and round-trips text, HTML, PNG, and file URI clipboard formats with explicit size bounds.
 - `lib/security/security_center_page.dart` provides a tested device/recovery management surface.
 
 The six-digit PIN is a local unlock factor for a random device-wrapping key; it is never the account master key, clipboard/file encryption key, recovery key, or server credential. Biometrics remain in platform authenticators and raw templates never leave the device. Backup email and phone OTP are recovery/step-up channels only.
@@ -21,13 +106,24 @@ The six-digit PIN is a local unlock factor for a random device-wrapping key; it 
 
 ```sh
 flutter pub get
-dart format lib test integration_test
+dart format lib test integration_test tool
 flutter analyze --fatal-infos --fatal-warnings
 flutter test --coverage
 flutter test integration_test/desktop_lifecycle_test.dart -d macos
+flutter test integration_test/desktop_clipboard_e2e_test.dart -d macos
+npx --yes --package='@informalsystems/quint@0.32.0' \
+  quint test formal/app_lifecycle_test.qnt \
+  --main=app_lifecycle_test --match='.*Test$'
 ```
 
-GitHub Actions additionally builds Linux, macOS, Windows, Android, and iOS simulator targets and executes the same search-and-pin integration flow on Android and iOS emulators. Mobile tests target the explicit `integration_test/app_test.dart` entrypoint so directory discovery cannot silently skip or misroute the device test.
+Android release builds intentionally fail unless the protected production
+signing environment is complete. See
+[Android release signing](docs/android-release-signing.md) for the owner setup,
+release-candidate workflow, retained evidence, and provider-verification gate.
+
+GitHub Actions builds Linux, macOS, Windows, Android, and iOS simulator targets with pinned Flutter 3.44.2. Each desktop runner executes three installed-app journeys—create/search/pin, native clipboard capture/search/queue/copy, and close-to-background/tray restore—and uploads the application plus crash diagnostics. Android and iOS execute the product and security-center flows on emulators/simulators. A successful compile is not treated as an E2E pass.
+
+The feature benchmark and release-blocking parity gaps are tracked in [`docs/competitive-parity.md`](docs/competitive-parity.md). “Parity” means tested behavior under the relevant OS constraints; documentation or an unexercised code path does not count.
 
 ## Platform boundaries
 

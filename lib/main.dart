@@ -1,20 +1,13 @@
-import 'dart:io';
+import 'package:ores_otel_flutter/ores_otel_flutter.dart';
 
-import 'package:flutter/widgets.dart';
+import 'startup/cliptown_bootstrap.dart';
 
-import 'cliptown_app.dart';
-import 'desktop/desktop_lifecycle_host.dart';
-
-DesktopLifecycleHost? _desktopLifecycleHost;
-
-Future<void> main() async {
-  WidgetsFlutterBinding.ensureInitialized();
-
-  var desktopBackgroundEnabled = false;
-  if (Platform.isMacOS || Platform.isWindows || Platform.isLinux) {
-    _desktopLifecycleHost = DesktopLifecycleHost();
-    desktopBackgroundEnabled = await _desktopLifecycleHost!.initialize();
-  }
-
-  runApp(ClipTownApp(desktopBackgroundEnabled: desktopBackgroundEnabled));
+void main(List<String> arguments) {
+  final logger = Logger(appName: 'cliptown_app');
+  runOresFlutterApp(
+    appName: 'cliptown_app',
+    emitToDeveloperLog: false,
+    sinks: [NextLoggersStartupDiagnosticSink(logger: logger)],
+    builder: (_) => ClipTownBootstrapApp(arguments: arguments),
+  );
 }

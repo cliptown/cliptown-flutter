@@ -1,16 +1,25 @@
 import 'dart:async';
 import 'dart:io';
-import 'dart:ui';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
+import 'package:hotkey_manager/hotkey_manager.dart';
 import 'package:tray_manager/tray_manager.dart';
 import 'package:window_manager/window_manager.dart';
 
 import 'desktop_lifecycle_controller.dart';
+import 'desktop_shell.dart';
+import 'desktop_shortcuts.dart';
+import 'launch_at_login.dart';
+import 'tray_icon.dart';
+import '../state/app_state_machine.dart';
 
-const String openClipTownMenuKey = 'open_cliptown';
-const String hideClipTownMenuKey = 'hide_cliptown';
-const String quitClipTownMenuKey = 'quit_cliptown';
+export 'desktop_shell.dart'
+    show
+        hideClipTownMenuKey,
+        openClipTownMenuKey,
+        quitClipTownMenuKey,
+        toggleCaptureMenuKey;
 
 DesktopTrayAction? desktopTrayActionForMenuKey(String? key) => switch (key) {
   openClipTownMenuKey => DesktopTrayAction.open,
@@ -19,19 +28,44 @@ DesktopTrayAction? desktopTrayActionForMenuKey(String? key) => switch (key) {
   _ => null,
 };
 
-class DesktopLifecycleHost with WindowListener, TrayListener {
-  DesktopLifecycleHost()
-    : controller = DesktopLifecycleController(
-        window: const WindowManagerPort(),
-        tray: const TrayManagerPort(),
-      );
+class DesktopLifecycleHost
+    with WindowListener, TrayListener
+    implements DesktopShell {
+  DesktopLifecycleHost({
+    AppStateMachine? stateMachine,
+    this.startHidden = false,
+    LaunchAtLogin? launchAtLogin,
+  }) : controller = DesktopLifecycleController(
+         window: const WindowManagerPort(),
+         tray: const TrayManagerPort(),
+         stateMachine: stateMachine,
+       ),
+       launchAtLogin = launchAtLogin ?? platformLaunchAtLogin();
 
   final DesktopLifecycleController controller;
+
+  /// Keep the window hidden after startup (login-item launch).
+  final bool startHidden;
+
+  @override
+  final LaunchAtLogin? launchAtLogin;
+
+  late final TrayIconFlasher _flasher = TrayIconFlasher(
+    _PlatformTrayIconPort(),
+  );
+  final ValueNotifier<int> _summonCount = ValueNotifier<int>(0);
   bool _trayReady = false;
+  bool _hotKeyReady = false;
+  DesktopTrayMenuModel _trayMenu = const DesktopTrayMenuModel();
+  DesktopTrayHandlers? _trayHandlers;
   Future<void> _windowReady = Future<void>.value();
 
   bool get trayReady => _trayReady;
+  bool get hotKeyReady => _hotKeyReady;
   Future<void> get windowReady => _windowReady;
+
+  @override
+  ValueListenable<int> get summonCount => _summonCount;
 
   Future<bool> initialize() async {
     await windowManager.ensureInitialized();
@@ -62,41 +96,162 @@ class DesktopLifecycleHost with WindowListener, TrayListener {
       title: 'ClipTown',
       titleBarStyle: TitleBarStyle.normal,
     );
+    // A hidden start is only safe when the tray can bring the window back.
+    final hideOnStart = startHidden && _trayReady;
     _windowReady = windowManager.waitUntilReadyToShow(
       options,
-      controller.openMainWindow,
+      hideOnStart ? controller.hideMainWindow : controller.openMainWindow,
     );
     unawaited(_windowReady);
+    await _configureSummonHotKey();
     return _trayReady;
   }
 
   Future<void> dispose() async {
+    controller.stateMachine.removeListener(_syncDismissHotKey);
     windowManager.removeListener(this);
     trayManager.removeListener(this);
+    _flasher.cancel();
 
     final trayWasReady = _trayReady;
     _trayReady = false;
+    _hotKeyReady = false;
+    _dismissHotKeyHeld = false;
     try {
+      // Summon, tray and (if held) dismiss shortcuts.
+      await _dismissHotKeyTail;
+      await hotKeyManager.unregisterAll();
       if (trayWasReady) await trayManager.destroy();
     } finally {
       await windowManager.setPreventClose(false);
     }
   }
 
+  /// Open (or re-focus) the main window and tell the UI to focus search.
+  Future<void> summon({bool flashTray = false}) async {
+    if (controller.isQuitting) return;
+    if (flashTray && _trayReady) unawaited(_flasher.flash());
+    try {
+      await controller.openMainWindow();
+    } on Object {
+      // Called from hotkey/tray callbacks that nobody awaits. The controller
+      // already moved the state machine to its native-failure state.
+      return;
+    }
+    _summonCount.value += 1;
+  }
+
+  @override
+  Future<void> dismiss() async {
+    if (!_trayReady) return;
+    await controller.hideMainWindow();
+  }
+
+  @override
+  void setTrayHandlers(DesktopTrayHandlers handlers) {
+    _trayHandlers = handlers;
+  }
+
+  @override
+  void updateTrayMenu(DesktopTrayMenuModel model) {
+    if (model == _trayMenu) return;
+    _trayMenu = model;
+    if (_trayReady) unawaited(_applyTrayMenu());
+  }
+
+  Future<void> _applyTrayMenu() async {
+    try {
+      await trayManager.setContextMenu(
+        buildTrayMenu(
+          _trayMenu,
+          isMacOS: Platform.isMacOS,
+          isWindows: Platform.isWindows,
+        ),
+      );
+    } on Object {
+      // The previous menu stays in place; the next store change retries.
+    }
+  }
+
+  Future<void> _configureSummonHotKey() async {
+    final hotKey = desktopSummonHotKey();
+    try {
+      // Clears registrations left behind by a hot restart.
+      await hotKeyManager.unregisterAll();
+      await hotKeyManager.register(
+        hotKey,
+        keyDownHandler: (_) => unawaited(summon(flashTray: true)),
+      );
+      _hotKeyReady = true;
+    } on Object catch (error) {
+      _hotKeyReady = false;
+      debugPrint('ClipTown global summon shortcut is unavailable: $error');
+    }
+    if (_trayReady) {
+      try {
+        await hotKeyManager.register(
+          desktopTrayHotKey(),
+          keyDownHandler: (_) => unawaited(showTrayMenu(flash: true)),
+        );
+      } on Object {
+        // The tray stays reachable by clicking its icon.
+      }
+    }
+    controller.stateMachine.addListener(_syncDismissHotKey);
+    _syncDismissHotKey();
+  }
+
+  /// Opens the tray menu (recent clips, open/hide/quit) from anywhere.
+  late final TrayMenuToggle _trayMenuToggle = TrayMenuToggle(
+    trayManager.popUpContextMenu,
+  );
+
+  /// Opens the tray menu (open/hide/quit, recent clips) whether or not the
+  /// window is showing; called again while it is open, it leaves it closed.
+  /// [flash] is for the keyboard shortcut, where the user may not be looking
+  /// at the menu bar.
+  Future<void> showTrayMenu({bool flash = false}) async {
+    if (!_trayReady || controller.isQuitting) return;
+    if (flash && !_trayMenuToggle.isOpen) unawaited(_flasher.flash());
+    await _trayMenuToggle.toggle();
+  }
+
+  bool _dismissHotKeyHeld = false;
+  Future<void> _dismissHotKeyTail = Future<void>.value();
+
+  /// Holds the system-wide Option/Alt+X only while the window is showing, so
+  /// other apps keep that key whenever ClipTown is hidden in the tray.
+  void _syncDismissHotKey() {
+    final wanted =
+        _trayReady && dismissHotKeyWanted(controller.stateMachine.state);
+    if (wanted == _dismissHotKeyHeld) return;
+    _dismissHotKeyHeld = wanted;
+    _dismissHotKeyTail = _dismissHotKeyTail.then((_) async {
+      try {
+        if (wanted) {
+          await hotKeyManager.register(
+            desktopDismissHotKey(),
+            keyDownHandler: (_) => unawaited(dismiss()),
+          );
+        } else {
+          await hotKeyManager.unregister(desktopDismissHotKey());
+        }
+      } on Object {
+        // The in-app Option/Alt+X binding still works while focused.
+      }
+    });
+  }
+
   Future<void> _configureTray() async {
-    final icon = Platform.isWindows
-        ? 'windows/runner/resources/app_icon.ico'
-        : 'macos/Runner/Assets.xcassets/AppIcon.appiconset/app_icon_32.png';
-    await trayManager.setIcon(icon);
-    await trayManager.setToolTip('ClipTown clipboard history');
+    await _PlatformTrayIconPort().setIcon(TrayIconVariant.normal);
+    await trayManager.setToolTip(
+      'ClipTown — click for recent clips (${trayShortcutLabel(isMacOS: Platform.isMacOS)})',
+    );
     await trayManager.setContextMenu(
-      Menu(
-        items: <MenuItem>[
-          MenuItem(key: openClipTownMenuKey, label: 'Open ClipTown'),
-          MenuItem(key: hideClipTownMenuKey, label: 'Hide ClipTown'),
-          MenuItem.separator(),
-          MenuItem(key: quitClipTownMenuKey, label: 'Quit ClipTown'),
-        ],
+      buildTrayMenu(
+        _trayMenu,
+        isMacOS: Platform.isMacOS,
+        isWindows: Platform.isWindows,
       ),
     );
   }
@@ -118,15 +273,47 @@ class DesktopLifecycleHost with WindowListener, TrayListener {
 
   @override
   void onTrayIconMouseDown() {
-    unawaited(controller.openMainWindow());
+    // Clicking the icon toggles its menu (Open ClipTown is the first item),
+    // regardless of whether the window is open or in front.
+    unawaited(showTrayMenu());
+  }
+
+  @override
+  void onTrayIconRightMouseDown() {
+    unawaited(showTrayMenu());
   }
 
   @override
   void onTrayMenuItemClick(MenuItem menuItem) {
-    final action = desktopTrayActionForMenuKey(menuItem.key);
+    final key = menuItem.key;
+    final action = desktopTrayActionForMenuKey(key);
+    if (action == DesktopTrayAction.open) {
+      unawaited(summon());
+      return;
+    }
     if (action != null) {
       unawaited(controller.handleTrayAction(action));
+      return;
     }
+    final handlers = _trayHandlers;
+    if (handlers == null) return;
+    if (key == toggleCaptureMenuKey) {
+      handlers.onToggleCapture();
+      return;
+    }
+    final clipId = recentClipIdForMenuKey(key);
+    if (clipId != null) {
+      handlers.onRecentClipSelected(clipId);
+      unawaited(_flasher.flash());
+    }
+  }
+}
+
+class _PlatformTrayIconPort implements TrayIconPort {
+  @override
+  Future<void> setIcon(TrayIconVariant variant) {
+    final asset = trayIconAsset(variant, platform: defaultTargetPlatform);
+    return trayManager.setIcon(asset.path, isTemplate: asset.isTemplate);
   }
 }
 
@@ -139,8 +326,22 @@ class WindowManagerPort implements DesktopWindowPort {
   @override
   Future<void> destroy() => windowManager.destroy();
 
+  static const MethodChannel _macOSWindowChannel = MethodChannel(
+    'cliptown/window',
+  );
+
   @override
-  Future<void> focus() => windowManager.focus();
+  Future<void> focus() async {
+    await windowManager.focus();
+    if (!Platform.isMacOS) return;
+    try {
+      // window_manager activates cooperatively; a summon from another app
+      // needs an explicit activation for the search field to get keys.
+      await _macOSWindowChannel.invokeMethod<void>('activate');
+    } on MissingPluginException {
+      // Older runner without the channel: window_manager focus stands.
+    }
+  }
 
   @override
   Future<void> hide() => windowManager.hide();

@@ -96,7 +96,10 @@ run_stage() {
       nixfmt --check flake.nix .nix/dev-shell.nix
       shellcheck .nix/agent-check.sh
       shfmt -i 2 -ci -d .nix/agent-check.sh
-      actionlint .github/workflows/test.yml .github/workflows/nix.yml
+      actionlint \
+        .github/workflows/test.yml \
+        .github/workflows/nix.yml \
+        .github/workflows/formal-methods.yml
       nix flake check --show-trace
       ;;
     workspace)
@@ -120,7 +123,8 @@ run_stage() {
       run_in_workspace flutter pub get
       ;;
     format)
-      run_in_workspace dart format --output=none --set-exit-if-changed lib test integration_test
+      run_in_workspace dart format --output=none --set-exit-if-changed \
+        lib test integration_test tool
       ;;
     analyze)
       run_in_workspace flutter analyze --fatal-infos --fatal-warnings

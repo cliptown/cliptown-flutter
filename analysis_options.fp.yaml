@@ -1,0 +1,57 @@
+# Functional-programming analysis profile.
+#
+# Include this from analysis_options.yaml:
+#
+#   include: analysis_options.fp.yaml
+#
+# then run `dart analyze`. Encodes the house rules: immutable values, pure
+# transformations, typed errors, composition, illegal states excluded by types.
+
+analyzer:
+  language:
+    strict-casts: true
+    strict-inference: true
+    strict-raw-types: true
+  exclude:
+    - "**/*.g.dart"
+    - "**/*.freezed.dart"
+    - "**/generated/**"
+    - "build/**"
+
+linter:
+  rules:
+    # ---- immutable values -----------------------------------------------
+    - prefer_final_locals
+    - prefer_final_fields
+    - prefer_final_in_for_each
+    - prefer_const_constructors
+    - prefer_const_constructors_in_immutables
+    - prefer_const_declarations
+    - prefer_const_literals_to_create_immutables
+    - avoid_setters_without_getters
+
+    # ---- explicit inputs and outputs -------------------------------------
+    - always_declare_return_types
+    - avoid_positional_boolean_parameters
+    - type_annotate_public_apis
+
+    # ---- pure transformations --------------------------------------------
+    - avoid_returning_this
+    - unnecessary_statements
+
+    # ---- typed errors -----------------------------------------------------
+    - only_throw_errors
+    - use_rethrow_when_possible
+
+    # ---- illegal states excluded by types ---------------------------------
+    - exhaustive_cases
+    - avoid_null_checks_in_equality_operators
+    - null_check_on_nullable_type_parameter
+    - avoid_dynamic_calls
+
+    # ---- effects pushed outward -------------------------------------------
+    - avoid_print
+
+    # ---- composition -------------------------------------------------------
+    - prefer_function_declarations_over_variables
+    - unnecessary_lambdas

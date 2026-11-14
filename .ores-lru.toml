@@ -1,0 +1,13 @@
+protocol = "ores.lru-config.v1"
+namespace = "cliptown"
+roles = ["client"]
+
+[defaults]
+capacity = 256
+syncMode = "local_only"
+overflowMode = "evict_lru"
+failOpenOnStartup = false
+
+[[caches]]
+name = "runtime-env"
+role = "client"
