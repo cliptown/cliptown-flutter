@@ -8,26 +8,9 @@ import '../history/clip_item.dart';
 import '../history/clip_repository.dart';
 import '../history/clipboard_snapshot.dart';
 import '../history/text_dedupe.dart';
+import 'clip_store_types.dart';
 
-class CaptureResult {
-  const CaptureResult._({
-    required this.accepted,
-    this.item,
-    this.rejectionReason,
-    this.refreshedExisting = false,
-  });
-
-  const CaptureResult.accepted(ClipItem item, {bool refreshedExisting = false})
-    : this._(accepted: true, item: item, refreshedExisting: refreshedExisting);
-
-  const CaptureResult.rejected(CaptureRejectionReason reason)
-    : this._(accepted: false, rejectionReason: reason);
-
-  final bool accepted;
-  final ClipItem? item;
-  final CaptureRejectionReason? rejectionReason;
-  final bool refreshedExisting;
-}
+export 'clip_store_types.dart';
 
 class ClipStore extends ChangeNotifier {
   ClipStore({
@@ -484,21 +467,7 @@ class ClipStore extends ChangeNotifier {
 
   /// The [limit] most recently used clips, newest first, without sorting or
   /// copying the whole history.
-  List<ClipItem> mostRecent(int limit) {
-    final top = <ClipItem>[];
-    for (final clip in _clips) {
-      var index = top.length;
-      while (index > 0 &&
-          top[index - 1].sortTimestamp.isBefore(clip.sortTimestamp)) {
-        index -= 1;
-      }
-      if (index < limit) {
-        top.insert(index, clip);
-        if (top.length > limit) top.removeLast();
-      }
-    }
-    return top;
-  }
+  List<ClipItem> mostRecent(int limit) => mostRecentOf(_clips, limit);
 
   /// Background de-duplication sweep: removes older verbatim-text duplicates
   /// (keeping the youngest, with merged pin/tags/collection). Duplicates can
@@ -617,10 +586,4 @@ class ClipStore extends ChangeNotifier {
     });
     return completer.future;
   }
-}
-
-/// A rejected user edit whose [message] is safe to show: it is a fixed string
-/// and never contains clipboard content (unlike e.g. a JSON decode error).
-class ClipInputException extends FormatException {
-  const ClipInputException(super.message);
 }

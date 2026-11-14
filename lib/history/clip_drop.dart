@@ -81,31 +81,38 @@ class _ClipDropZoneState extends State<ClipDropZone> {
 
   Future<void> _onPerformDrop(PerformDropEvent event) async {
     _setHovering(false);
-    final images = <Uint8List>[];
-    final files = <Uri>[];
-    final texts = <String>[];
-    for (final item in event.session.items) {
-      final reader = item.dataReader;
-      if (reader == null) continue;
-      final image = await _readImage(reader);
-      if (image != null) {
-        images.add(image);
-        continue;
-      }
-      final file = await _readValue(reader, Formats.fileUri);
-      if (file != null) {
-        files.add(file);
-        continue;
-      }
-      final text = await _readValue(reader, Formats.plainText);
-      if (text != null) texts.add(text);
-    }
+    final dropped = <_Dropped>[
+      for (final item in event.session.items)
+        if (item.dataReader case final reader?) await _readItem(reader),
+    ];
     final snapshots = snapshotsFromDrop(
-      pngImages: images,
-      fileUris: files,
-      texts: texts,
+      pngImages: <Uint8List>[
+        for (final item in dropped)
+          if (item case _DroppedImage(:final png)) png,
+      ],
+      fileUris: <Uri>[
+        for (final item in dropped)
+          if (item case _DroppedFile(:final uri)) uri,
+      ],
+      texts: <String>[
+        for (final item in dropped)
+          if (item case _DroppedText(:final text)) text,
+      ],
     );
     if (snapshots.isNotEmpty) widget.onDropped(snapshots);
+  }
+
+  /// One dropped item: an image if it is one (also image files), else a file
+  /// URI, else text.
+  static Future<_Dropped> _readItem(DataReader reader) async {
+    if (await _readImage(reader) case final png?) return _DroppedImage(png);
+    if (await _readValue(reader, Formats.fileUri) case final uri?) {
+      return _DroppedFile(uri);
+    }
+    if (await _readValue(reader, Formats.plainText) case final text?) {
+      return _DroppedText(text);
+    }
+    return const _DroppedNothing();
   }
 
   /// A dropped image (or image file), re-encoded as PNG; null otherwise.
@@ -186,4 +193,27 @@ class _ClipDropZoneState extends State<ClipDropZone> {
       ),
     );
   }
+}
+
+sealed class _Dropped {
+  const _Dropped();
+}
+
+final class _DroppedImage extends _Dropped {
+  const _DroppedImage(this.png);
+  final Uint8List png;
+}
+
+final class _DroppedFile extends _Dropped {
+  const _DroppedFile(this.uri);
+  final Uri uri;
+}
+
+final class _DroppedText extends _Dropped {
+  const _DroppedText(this.text);
+  final String text;
+}
+
+final class _DroppedNothing extends _Dropped {
+  const _DroppedNothing();
 }
