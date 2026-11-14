@@ -54,12 +54,21 @@ void main() {
       lastUsedAt: now,
     );
     expect(item.summary, 'cat.png');
-    expect(defaultClipTitle(ClipKind.files, fileUris: <String>['file:///']), 'File');
+    expect(
+      defaultClipTitle(ClipKind.files, fileUris: <String>['file:///']),
+      'File',
+    );
     expect(
       defaultClipTitle(ClipKind.files, fileUris: <String>['C:\\notes\\draft.txt']),
       'draft.txt',
     );
-    expect(defaultClipTitle(ClipKind.files, fileUris: <String>[List<String>.filled(150, 'x').join()]).length, lessThanOrEqualTo(73));
+    expect(
+      defaultClipTitle(
+        ClipKind.files,
+        fileUris: <String>[List<String>.filled(150, 'x').join()],
+      ).length,
+      lessThanOrEqualTo(73),
+    );
   });
 
   test('snapshot and persisted fingerprints agree', () {
