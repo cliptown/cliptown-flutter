@@ -55,7 +55,7 @@ Current builds are ad-hoc signed (`scripts/build-macos-adhoc.sh`): they use `mac
 | ⌘F / Ctrl+F | in ClipTown | Focus search |
 | hold ⌥ / Alt | in ClipTown | Show tooltips instantly while hovering (every control has one) |
 
-⌥C and ⌥O are always global; ⌥X is global only while ClipTown is showing, so other apps keep ⌥X (and all editing keys) whenever ClipTown is hidden. The tray (menu-bar) icon opens ClipTown on click. Its menu (also ⌥O) starts with Open, Hide and Quit, then lists the ten most recent clips (click to copy; likely secrets are masked), then pause/resume capture. **Open ClipTown at login** (Privacy and capture settings) starts it hidden in the tray via `SMAppService` on macOS 13+, the `HKCU\…\Run` key on Windows, and an XDG autostart entry on Linux.
+⌥C and ⌥O are always global; ⌥X is global only while ClipTown is showing, so other apps keep ⌥X (and all editing keys) whenever ClipTown is hidden. Clicking the tray (menu-bar) icon opens its menu whether or not the window is showing, and clicking it again closes the menu. The menu (also ⌥O) starts with Open, Hide and Quit, then lists the ten most recent clips (click to copy; likely secrets are masked), then pause/resume capture. **Open ClipTown at login** (Privacy and capture settings) starts it hidden in the tray via `SMAppService` on macOS 13+, the `HKCU\…\Run` key on Windows, and an XDG autostart entry on Linux.
 
 On Linux, ClipTown adds itself to the app launcher (`~/.local/share/applications/cliptown.desktop`, with its icon) the first time it runs, and refreshes the entry if the bundle moves; Flatpak/Snap builds keep their own entry.
 
