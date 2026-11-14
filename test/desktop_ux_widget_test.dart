@@ -841,4 +841,33 @@ void main() {
       hasLength(1),
     );
   });
+
+  testWidgets('New clip fits a phone with the keyboard up (scrolls, no '
+      'overflow)', (tester) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    tester.view.viewInsets = const FakeViewPadding(bottom: 336);
+    addTearDown(tester.view.reset);
+    final store = await createDemoStore();
+    await tester.pumpWidget(ClipTownApp(store: store));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('add-manual-clip')));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull, reason: 'no RenderFlex overflow');
+    await tester.scrollUntilVisible(
+      find.byKey(const Key('new-clip-files')),
+      80,
+      scrollable: find
+          .descendant(
+            of: find.byType(AlertDialog),
+            matching: find.byType(Scrollable),
+          )
+          .first,
+    );
+    expect(
+      find.byKey(const Key('new-clip-files')).hitTestable(),
+      findsOneWidget,
+    );
+  });
 }

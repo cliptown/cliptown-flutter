@@ -50,6 +50,8 @@ Future<NewClipRequest?> showNewClipDialog(BuildContext context) {
   return showDialog<NewClipRequest>(
     context: context,
     builder: (context) => AlertDialog(
+      // Scrolls when space is short (phones with the keyboard up).
+      scrollable: true,
       title: const Text('New clip'),
       content: SizedBox(
         width: 520,
