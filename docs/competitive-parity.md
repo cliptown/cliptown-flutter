@@ -27,7 +27,10 @@ Legend: **implemented** means code plus local automated evidence exists; **hoste
 | Pause capture, exclude apps, reject likely secrets | Implemented policy; source-app identity adapter incomplete | Policy/UI onboarding planned | Background daemon prohibited | Platform privacy tests are blocking |
 | Sequential paste queue | Implemented | Planned | Shared UI only | Ordered-copy journey required |
 | Plain paste and deterministic transforms | Implemented baseline transforms | Planned | Shared UI | Transform corpus must match both desktops |
-| Tray/menu-bar lifecycle and global shortcut | Implemented foundation | GPUI window foundation; tray/hotkey planned | Not applicable | Installed-app journey on all desktop OSes |
+| Keyboard-first picker (arrow selection, Return to copy-and-hide, ⌘/Ctrl+1–9 quick copy) | Implemented with widget tests | Planned | Not applicable | Keyboard journey on all desktop OSes |
+| Edit clip text, tag editor, inline scroll of long clips, colour swatches, age/size metadata | Implemented with widget tests | Planned | Shared Flutter UI | Shared fixtures must preserve metadata |
+| Paste directly into the previous app | Planned: copy-and-hide today; auto-paste needs Accessibility + non-sandboxed build | Planned | Not applicable | Requires an explicit sandbox/permission decision |
+| Tray/menu-bar lifecycle and global shortcut | Implemented: ⌥C/Alt+C summon with tray flash, in-app ⌥X/Alt+X hide, tray recent-clips menu, pause/resume, open at login | GPUI window foundation; tray/hotkey planned | Not applicable | Installed-app journey on all desktop OSes |
 | OCR, QR generation, color intelligence | Planned | Planned | Planned | Required before union-parity claim |
 | Scripting/CLI automation | Planned in Flutter product | Implemented CLI contract probe and commands | Not applicable | Sandboxed scripting/security design required |
 | Encrypted device-to-device sync | Planned | Planned | Planned | Cryptographic and revocation E2E required |
@@ -35,7 +38,7 @@ Legend: **implemented** means code plus local automated evidence exists; **hoste
 | Encrypted metadata/vector backup in Postgres and CockroachDB | Planned schema/contract | Planned schema/contract | Planned | Declarative migration convergence on both engines |
 | iOS share/keyboard extensions and Android share/input method | Not applicable | Not applicable | Planned | Real-device acceptance and store-policy review |
 | Shared pinboards/collaboration | Planned | Planned | Planned | Explicit end-to-end privacy and authorization model |
-| Signed installers, auto-update, stores | Planned | Planned | Planned | Separate signed canary for every target |
+| Signed installers, auto-update, stores | macOS: ad-hoc signed GitHub Release + `scripts/install-macos.sh` (release or source build); Developer ID signing, notarization and auto-update planned | Planned | Planned | Separate signed canary for every target |
 
 ## Paired-desktop rule
 

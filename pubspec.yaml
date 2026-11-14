@@ -49,5 +49,9 @@ hooks:
 flutter:
   uses-material-design: true
   assets:
-    - macos/Runner/Assets.xcassets/AppIcon.appiconset/app_icon_32.png
-    - windows/runner/resources/app_icon.ico
+    - assets/icon/app_icon_256.png
+    - assets/tray/tray_template.png
+    - assets/tray/tray_color.png
+    - assets/tray/tray_color.ico
+    - assets/tray/tray_highlight.png
+    - assets/tray/tray_highlight.ico

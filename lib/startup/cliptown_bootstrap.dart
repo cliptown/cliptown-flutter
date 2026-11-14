@@ -7,6 +7,8 @@ import '../clipboard/clipboard_controller.dart';
 import '../clipboard/clipboard_service.dart';
 import '../cliptown_app.dart';
 import '../desktop/desktop_lifecycle_host.dart';
+import '../desktop/launch_at_login.dart';
+import '../desktop/linux_desktop_entry.dart';
 import '../history/clip_item.dart';
 import '../history/clip_repository.dart';
 import '../history/sqlite_clip_repository.dart';
@@ -47,7 +49,9 @@ final class ClipTownStartupResources {
   }
 }
 
-Future<ClipTownStartupResources> bootstrapClipTownRuntime() async {
+Future<ClipTownStartupResources> bootstrapClipTownRuntime({
+  List<String> arguments = const <String>[],
+}) async {
   ClipRepository repository;
   try {
     repository = await createPlatformSqliteClipRepository();
@@ -75,7 +79,11 @@ Future<ClipTownStartupResources> bootstrapClipTownRuntime() async {
     var desktopBackgroundEnabled = false;
     var desktopHotKeyEnabled = false;
     if (isDesktop) {
-      final candidate = DesktopLifecycleHost(stateMachine: stateMachine);
+      unawaited(registerLinuxDesktopEntryForCurrentProcess());
+      final candidate = DesktopLifecycleHost(
+        stateMachine: stateMachine,
+        startHidden: await launchedAtLogin(arguments),
+      );
       try {
         desktopBackgroundEnabled = await candidate.initialize();
         desktopHotKeyEnabled = candidate.hotKeyReady;
@@ -115,10 +123,12 @@ class ClipTownBootstrapApp extends StatefulWidget {
   const ClipTownBootstrapApp({
     super.key,
     this.startup,
+    this.arguments = const <String>[],
     this.startupTimeout = const Duration(seconds: 15),
   });
 
   final ClipTownStartup? startup;
+  final List<String> arguments;
   final Duration startupTimeout;
 
   @override
@@ -150,7 +160,9 @@ class _ClipTownBootstrapAppState extends State<ClipTownBootstrapApp> {
       });
     }
 
-    final source = (widget.startup ?? bootstrapClipTownRuntime)();
+    final source =
+        widget.startup?.call() ??
+        bootstrapClipTownRuntime(arguments: widget.arguments);
     try {
       final resources = await source.timeout(widget.startupTimeout);
       _accept(resources, attempt);
