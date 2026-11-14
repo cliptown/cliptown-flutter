@@ -7,6 +7,7 @@ import 'package:super_clipboard/super_clipboard.dart';
 
 import '../history/clip_item.dart';
 import '../history/clipboard_snapshot.dart';
+import '../history/text_dedupe.dart';
 
 typedef ClipboardSnapshotHandler =
     Future<void> Function(ClipboardSnapshot snapshot);
@@ -38,7 +39,12 @@ class SystemClipClipboardService
   bool _insideHandler = false;
   bool _readInFlight = false;
   String? _suppressedFingerprint;
-  String? _lastObservedFingerprint;
+
+  /// Last snapshot seen on the clipboard. A new snapshot whose text is
+  /// verbatim the same (or, for images/files, the same fingerprint) is the
+  /// same copy reported again, e.g. with a different HTML flavour, and is
+  /// dropped here before it reaches the store.
+  ClipboardSnapshot? _lastObserved;
   Timer? _reconciliationTimer;
   Future<void> _callbackTail = Future<void>.value();
 
@@ -54,7 +60,7 @@ class SystemClipClipboardService
       await clipboardWatcher.start();
       _monitoring = true;
       try {
-        _lastObservedFingerprint = (await read())?.fingerprintMaterial;
+        _lastObserved = await read();
       } on Object {
         // The watcher remains useful when the clipboard is temporarily locked.
       }
@@ -105,12 +111,14 @@ class SystemClipClipboardService
           final snapshot = await read();
           if (!_monitoring) return;
           if (snapshot == null) {
-            _lastObservedFingerprint = null;
+            _lastObserved = null;
             return;
           }
-          final fingerprint = snapshot.fingerprintMaterial;
-          if (_lastObservedFingerprint == fingerprint) return;
-          _lastObservedFingerprint = fingerprint;
+          final previous = _lastObserved;
+          if (previous != null && sameClipboardContent(previous, snapshot)) {
+            return;
+          }
+          _lastObserved = snapshot;
           if (_suppressedFingerprint == snapshot.fingerprintMaterial) {
             _suppressedFingerprint = null;
             return;
