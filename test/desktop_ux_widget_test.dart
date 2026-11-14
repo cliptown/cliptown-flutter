@@ -112,6 +112,7 @@ Future<void> _press(
 }
 
 void main() {
+  _probeJump();
   testWidgets('status line advertises Alt+C / Alt+X instead of Shift+V', (
     tester,
   ) async {
@@ -669,4 +670,44 @@ void main() {
       );
     },
   );
+}
+
+void _probeJump() {
+  testWidgets('PROBE jump on click', (tester) async {
+    final store = ClipStore(
+      repository: MemoryClipRepository(
+        seed: <ClipItem>[
+          for (var i = 0; i < 30; i++)
+            ClipItem(
+              id: 'c$i',
+              kind: ClipKind.text,
+              title: 'Clip number $i',
+              text: List<String>.generate(12, (l) => 'row $i line $l').join('\n'),
+              createdAt: demoFixtureBase.subtract(Duration(minutes: i)),
+              lastUsedAt: demoFixtureBase.subtract(Duration(minutes: i)),
+            ),
+        ],
+      ),
+      clock: demoClock,
+    );
+    await store.initialize();
+    await _pump(tester, store: store);
+    final outer = tester.state<ScrollableState>(find.descendant(
+      of: find.byKey(const Key('clip-history-scroll')),
+      matching: find.byType(Scrollable),
+    ).first);
+    outer.position.jumpTo(1500);
+    await tester.pumpAndSettle();
+    final target = find.text('Clip number 12');
+    expect(target, findsOneWidget);
+    final before = outer.position.pixels;
+    await tester.tap(target);
+    final offsets = <double>[];
+    for (var f = 0; f < 30; f++) {
+      await tester.pump(const Duration(milliseconds: 16));
+      offsets.add(outer.position.pixels);
+    }
+    // ignore: avoid_print
+    print('PROBE before=$before offsets=${offsets.map((o) => o.toStringAsFixed(0)).join(',')}');
+  });
 }
