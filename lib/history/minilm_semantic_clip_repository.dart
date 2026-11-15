@@ -265,6 +265,16 @@ final class MiniLmSemanticClipRepository
         .toList(growable: false);
   }
 
+  /// Close native SQLite resources without erasing the persisted index.
+  Future<void> close() async {
+    _generation += 1;
+    _pending.clear();
+    await _indexing;
+    _database?.close();
+    _database = null;
+    await _changes.close();
+  }
+
   Future<int> embeddingCount() async => (_open().select(
     'SELECT count(*) AS count FROM vectors WHERE embedding IS NOT NULL',
   ).single['count'] as int);
