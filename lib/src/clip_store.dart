@@ -10,6 +10,7 @@ import '../history/clip_repository.dart';
 import '../history/clipboard_snapshot.dart';
 import '../history/text_dedupe.dart';
 import 'clip_store_types.dart';
+import 'visible_clip_sort.dart';
 
 export 'clip_store_types.dart';
 
@@ -77,49 +78,18 @@ class ClipStore extends ChangeNotifier {
       .where((value) => value.isNotEmpty)
       .toSet();
 
-  /// Stable, immutable snapshot: status, queue and clipboard UI events must
-  /// not refilter or resort up to 100,000 items on every widget rebuild.
-  List<ClipItem> get visibleClips {
-    if (_visibleClipsCache case final cached?) return cached;
-    final normalized = _query.trim().toLowerCase();
-    final exactMatches = <String, bool>{};
-    final result = <ClipItem>[];
-    for (final clip in _clips) {
-      if (_pinnedOnly && !clip.pinned) continue;
-      if (_kindFilter != null && clip.kind != _kindFilter) continue;
-      if (_collectionFilter != null &&
-          clip.collection != _collectionFilter) {
-        continue;
-      }
-      final exact = normalized.isNotEmpty &&
-          _searchText(clip).contains(normalized);
-      if (normalized.isNotEmpty &&
-          !exact &&
-          !_semanticSearch.matches(clip.id)) {
-        continue;
-      }
-      if (normalized.isNotEmpty) exactMatches[clip.id] = exact;
-      result.add(clip);
-    }
-    result.sort((a, b) {
-      if (a.pinned != b.pinned) return a.pinned ? -1 : 1;
-      if (normalized.isNotEmpty) {
-        final aExact = exactMatches[a.id]!;
-        final bExact = exactMatches[b.id]!;
-        if (aExact != bExact) return aExact ? -1 : 1;
-        final aRank = _semanticSearch.rankOf(a.id);
-        final bRank = _semanticSearch.rankOf(b.id);
-        if (aRank != null && bRank != null) {
-          final relevance = aRank.compareTo(bRank);
-          if (relevance != 0) return relevance;
-        }
-      }
-      final recent = b.sortTimestamp.compareTo(a.sortTimestamp);
-      // Deterministic tie breaking prevents row thrash after a re-sort.
-      return recent != 0 ? recent : a.id.compareTo(b.id);
-    });
-    return _visibleClipsCache = List<ClipItem>.unmodifiable(result);
-  }
+  /// Stable snapshot shared by unrelated UI rebuilds.
+  List<ClipItem> get visibleClips => _visibleClipsCache ??=
+      buildVisibleClipSnapshot(
+        _clips,
+        query: _query,
+        pinnedOnly: _pinnedOnly,
+        kindFilter: _kindFilter,
+        collectionFilter: _collectionFilter,
+        semanticMatches: _semanticSearch.matches,
+        semanticRank: _semanticSearch.rankOf,
+        normalizedSearchText: _searchText,
+      );
 
   Future<void> initialize() => _enqueue(() async {
     if (_initialized) return;
