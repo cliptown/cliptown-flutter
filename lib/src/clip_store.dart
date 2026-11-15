@@ -26,6 +26,7 @@ class ClipStore extends ChangeNotifier {
   final List<ClipItem> _clips = <ClipItem>[];
   final List<String> _queuedIds = <String>[];
   Set<String> _semanticMatchIds = const <String>{};
+  StreamSubscription<void>? _semanticIndexSubscription;
   Future<void> _operationTail = Future<void>.value();
   CapturePolicy _policy;
   String _query = '';
@@ -97,6 +98,19 @@ class ClipStore extends ChangeNotifier {
       _initialized = true;
       _vaultLocked = false;
       _statusMessage = null;
+      if (_repository case final SemanticClipRepositoryUpdates updates) {
+        _semanticIndexSubscription = updates.indexUpdates.listen((_) {
+          final query = _query.trim();
+          if (_vaultLocked || query.length < 2) return;
+          if (_repository case final SemanticClipRepository semantic) {
+            unawaited(_loadSemanticMatches(
+              semantic,
+              query,
+              _queryGeneration,
+            ));
+          }
+        });
+      }
     } on Object {
       _clips.clear();
       _queuedIds.clear();
@@ -573,6 +587,12 @@ class ClipStore extends ChangeNotifier {
   String _nextId(DateTime now) {
     _idCounter += 1;
     return '${now.microsecondsSinceEpoch.toRadixString(36)}-${_idCounter.toRadixString(36)}';
+  }
+
+  @override
+  void dispose() {
+    unawaited(_semanticIndexSubscription?.cancel());
+    super.dispose();
   }
 
   Future<T> _enqueue<T>(Future<T> Function() operation) {
