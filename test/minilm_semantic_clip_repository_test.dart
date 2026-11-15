@@ -118,6 +118,20 @@ void main() {
     await repo.clear();
   });
 
+  test('deletion during in-flight embedding never resurrects a clip', () async {
+    final model = _DelayedMeaningEmbedder();
+    final repo = newRepository(embedder: model);
+    await repo.load();
+
+    // The model is blocked on the first asynchronous vector.
+    await repo.save(const []);
+    model.allow();
+    await repo.waitForIndexing();
+    expect(await repo.embeddingCount(), 0);
+    expect(await repo.semanticSearchIds('software rollout release'), isEmpty);
+    await repo.clear();
+  });
+
   test('vector codec still accepts exactly 384 floats', () {
     final fake = List<double>.filled(localEmbeddingDimensions, 0)..[0] = 1;
     expect(decodeLocalEmbedding(encodeLocalEmbedding(fake)), fake);
