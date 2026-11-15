@@ -36,8 +36,11 @@ void main() {
     );
     await tester.pump();
     expect(
-      find.textContaining('Downloading MiniLM model: 40%'),
-      findsOneWidget,
+      tester
+          .widget<TextField>(find.byKey(const Key('clip-search')))
+          .decoration
+          ?.helperText,
+      contains('Downloading MiniLM model: 40%'),
     );
 
     repository.publish(
@@ -57,8 +60,11 @@ void main() {
 
     expect(repository.retries.value, 1);
     expect(
-      find.textContaining('Meaning search ready (2 clips)'),
-      findsOneWidget,
+      tester
+          .widget<TextField>(find.byKey(const Key('clip-search')))
+          .decoration
+          ?.helperText,
+      contains('Meaning search ready (2 clips)'),
     );
     expect(find.text('Deploy command'), findsOneWidget);
 
