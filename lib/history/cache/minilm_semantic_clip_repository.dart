@@ -250,7 +250,8 @@ final class MiniLmSemanticClipRepository
     if (!_indexAvailable || _indexing != null || _pending.isNotEmpty) return;
     final db = _database;
     if (db == null ||
-        db.select('SELECT 1 FROM vectors WHERE embedding IS NULL LIMIT 1')
+        db
+            .select('SELECT 1 FROM vectors WHERE embedding IS NULL LIMIT 1')
             .isEmpty) {
       return;
     }

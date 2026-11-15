@@ -182,10 +182,10 @@ void main() {
     final bad = List<double>.filled(localEmbeddingDimensions, 0)
       ..[0] = double.nan;
     final db = sqlite3.open(indexPath);
-    db.execute(
-      'UPDATE vectors SET embedding = ? WHERE clip_id = ?',
-      <Object?>[encodeLocalEmbedding(bad), 'deploy-command'],
-    );
+    db.execute('UPDATE vectors SET embedding = ? WHERE clip_id = ?', <Object?>[
+      encodeLocalEmbedding(bad),
+      'deploy-command',
+    ]);
     db.close();
 
     expect(await repo.semanticSearchIds('software rollout release'), isEmpty);
@@ -229,24 +229,21 @@ void main() {
     },
   );
 
-  test(
-    'replacing history invalidates an in-flight semantic query',
-    () async {
-      final model = _BlockedQueryEmbedder();
-      final repo = newRepository(embedder: model);
-      final clips = await repo.load();
-      await repo.waitForIndexing();
-      final search = repo.semanticSearchIds('software rollout release');
-      await model.queryStarted.future;
+  test('replacing history invalidates an in-flight semantic query', () async {
+    final model = _BlockedQueryEmbedder();
+    final repo = newRepository(embedder: model);
+    final clips = await repo.load();
+    await repo.waitForIndexing();
+    final search = repo.semanticSearchIds('software rollout release');
+    await model.queryStarted.future;
 
-      await repo.save(
-        clips.where((clip) => clip.id == 'security-notes').toList(),
-      );
-      model.releaseQuery();
-      expect(await search, isEmpty);
-      await repo.clear();
-    },
-  );
+    await repo.save(
+      clips.where((clip) => clip.id == 'security-notes').toList(),
+    );
+    model.releaseQuery();
+    expect(await search, isEmpty);
+    await repo.clear();
+  });
 
   test('vector codec still accepts exactly 384 floats', () {
     final fake = List<double>.filled(localEmbeddingDimensions, 0)..[0] = 1;
