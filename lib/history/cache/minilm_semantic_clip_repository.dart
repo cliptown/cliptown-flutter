@@ -11,6 +11,7 @@ import 'package:sqlite3/sqlite3.dart';
 import '../clip_item.dart';
 import '../clip_repository.dart';
 import '../local_embedding.dart';
+import 'bounded_vector_search.dart';
 import 'minilm_embedder.dart';
 
 /// A disposable local derivative index. Clipboard history and its encryption
@@ -40,6 +41,9 @@ final class MiniLmSemanticClipRepository
   Future<void>? _closing;
   int _generation = 0;
   bool _indexAvailable = true;
+  Map<String, (String, String)> _lastDesired = const {};
+  bool _hasIndexedSnapshot = false;
+  bool _needsRecovery = false;
 
   /// Notification allows an already-visible query to refresh as indexing
   /// progresses, instead of requiring the user to retype it.
@@ -68,6 +72,8 @@ final class MiniLmSemanticClipRepository
     } on Object {
       _indexAvailable = false;
       _pending.clear();
+      _lastDesired = const {};
+      _hasIndexedSnapshot = false;
       _database?.close();
       _database = null;
     }
@@ -110,12 +116,31 @@ final class MiniLmSemanticClipRepository
     for (final clip in clips) {
       if (clip.text case final text?) {
         if (text.trim().isNotEmpty) {
+          final previous = _lastDesired[clip.id];
           desired[clip.id] = (
             text,
-            sha256.convert(utf8.encode(text)).toString(),
+            previous != null && previous.$1 == text
+                ? previous.$2
+                : sha256.convert(utf8.encode(text)).toString(),
           );
         }
       }
+    }
+    var changed = !_hasIndexedSnapshot || desired.length != _lastDesired.length;
+    if (!changed) {
+      for (final entry in desired.entries) {
+        if (_lastDesired[entry.key]?.$2 != entry.value.$2) {
+          changed = true;
+          break;
+        }
+      }
+    }
+    // Pinning, reordering and mark-used saves must not rebuild a 100k-row
+    // SQLite index or cancel an in-flight embedding worker. Retry explicitly
+    // after an earlier offline model failure, however.
+    if (!changed && !_needsRecovery) {
+      _startIndexing();
+      return;
     }
     final db = _open();
     db.execute('BEGIN IMMEDIATE');
@@ -126,6 +151,9 @@ final class MiniLmSemanticClipRepository
       db.execute('ROLLBACK');
       rethrow;
     }
+    _lastDesired = desired;
+    _hasIndexedSnapshot = true;
+    _needsRecovery = false;
     // Invalidate query and indexing work started against an older clip set.
     _generation += 1;
     _startIndexing();
@@ -229,6 +257,7 @@ final class MiniLmSemanticClipRepository
       } on Object {
         // Model unavailable/offline: leave rows pending for restart or the
         // next mutation. Never replace semantic results with hash embeddings.
+        _needsRecovery = true;
         _pending.clear();
         break;
       }
@@ -278,33 +307,51 @@ final class MiniLmSemanticClipRepository
     if (generation != _generation) return const [];
     await _resumeUnindexedAfterRecovery(generation);
     if (generation != _generation || !_indexAvailable) return const [];
-    final rows = _open().select(
-      'SELECT clip_id, embedding FROM vectors '
-      'WHERE model_id = ? AND dimensions = ? AND embedding IS NOT NULL',
-      <Object?>[model.modelId, localEmbeddingDimensions],
-    );
-    final matches = <SqliteMiniLmSearchResult>[];
-    for (final row in rows) {
-      try {
-        final vector = decodeLocalEmbedding(row['embedding'] as Uint8List);
-        if (vector.any((value) => !value.isFinite)) continue;
-        final distance = localEmbeddingCosineDistance(queryVector, vector);
-        if (!distance.isFinite) continue;
-        matches.add(
-          SqliteMiniLmSearchResult(
-            clipId: row['clip_id'] as String,
-            distance: distance.clamp(0.0, 2.0).toDouble(),
-          ),
+    final magnitude = validEmbeddingMagnitude(queryVector);
+    if (magnitude == null) return const [];
+    final topK = BoundedVectorSearch(limit);
+    // SQLite rowid pagination keeps memory bounded even for 100k 384-float
+    // vectors. Yield between batches so rendering and input remain responsive.
+    var lastRowId = 0;
+    const batchSize = 256;
+    while (true) {
+      if (generation != _generation || !_indexAvailable) return const [];
+      final rows = _open().select(
+        'SELECT rowid, clip_id, embedding FROM vectors '
+        'WHERE rowid > ? AND model_id = ? AND dimensions = ? '
+        'AND embedding IS NOT NULL ORDER BY rowid LIMIT ?',
+        <Object?>[
+          lastRowId,
+          model.modelId,
+          localEmbeddingDimensions,
+          batchSize,
+        ],
+      );
+      if (rows.isEmpty) break;
+      for (final row in rows) {
+        lastRowId = row['rowid'] as int;
+        final distance = encodedCosineDistance(
+          queryVector,
+          magnitude,
+          row['embedding'] as Uint8List,
         );
-      } on FormatException {
-        // A damaged derived vector never blocks the encrypted history.
+        if (distance != null) {
+          topK.offer(row['clip_id'] as String, distance);
+        }
       }
+      if (rows.length < batchSize) break;
+      await Future<void>.delayed(Duration.zero);
     }
-    matches.sort((a, b) {
-      final distance = a.distance.compareTo(b.distance);
-      return distance != 0 ? distance : a.clipId.compareTo(b.clipId);
-    });
-    return matches.take(limit).toList(growable: false);
+    if (generation != _generation || !_indexAvailable) return const [];
+    return topK
+        .sorted()
+        .map(
+          (match) => SqliteMiniLmSearchResult(
+            clipId: match.clipId,
+            distance: match.distance,
+          ),
+        )
+        .toList(growable: false);
   }
 
   @override
@@ -348,6 +395,9 @@ final class MiniLmSemanticClipRepository
     await history.clear();
     _generation += 1;
     _pending.clear();
+    _lastDesired = const {};
+    _hasIndexedSnapshot = false;
+    _needsRecovery = false;
     _database?.close();
     _database = null;
     for (final suffix in <String>['', '-wal', '-shm']) {
