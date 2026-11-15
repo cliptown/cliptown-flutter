@@ -1,0 +1,66 @@
+name: Incremental encrypted SQLite verification (temporary)
+
+on:
+  push:
+    branches: [ci/incremental-encrypted-sqlite-verification]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  sqlite:
+    name: SQLite encryption, regression and benchmark
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout performance tree
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+          path: cliptown-flutter
+      - name: Checkout sibling interfaces
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+          repository: cliptown/cliptown-interfaces
+          ref: e4e957b5372dc363fe6a52559c8959f0de781efb
+          path: cliptown-interfaces
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+        with:
+          flutter-version: '3.44.2'
+          cache: true
+      - name: Resolve Flutter dependencies
+        working-directory: cliptown-flutter
+        run: flutter pub get
+      - name: Format and report Dart-only changes
+        working-directory: cliptown-flutter
+        run: |
+          dart format lib test
+          git diff --check
+          echo 'CLIPTOWN_FORMAT_DIFF_BEGIN'
+          git diff --no-ext-diff --no-color --unified=3 -- lib test
+          echo 'CLIPTOWN_FORMAT_DIFF_END'
+      - name: Strict static analysis
+        working-directory: cliptown-flutter
+        run: flutter analyze --fatal-infos --fatal-warnings
+      - name: Regression tests for encrypted history and vector search
+        working-directory: cliptown-flutter
+        run: |
+          flutter test --reporter=expanded \
+            test/sqlite_clip_repository_test.dart \
+            test/incremental_sqlite_clip_repository_test.dart \
+            test/minilm_semantic_clip_repository_test.dart \
+            test/clip_store_test.dart \
+            test/encrypted_clip_repository_test.dart
+      - name: Full Flutter unit and widget suite
+        working-directory: cliptown-flutter
+        timeout-minutes: 12
+        run: flutter test --reporter=expanded
+      - name: End-to-end encrypted SQLite 1k–100k benchmarks
+        working-directory: cliptown-flutter
+        timeout-minutes: 16
+        run: |
+          flutter test --dart-define=CLIPTOWN_RUN_SQLITE_BENCH=true \
+            test/performance/sqlite_clip_persistence_benchmark_test.dart \
+            --reporter=expanded
