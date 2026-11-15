@@ -2,6 +2,7 @@ import 'package:cliptown_app/history/capture_policy.dart';
 import 'package:cliptown_app/history/clip_item.dart';
 import 'package:cliptown_app/history/clip_repository.dart';
 import 'package:cliptown_app/history/clipboard_snapshot.dart';
+import 'package:cliptown_app/src/cache/clip_retention.dart';
 import 'package:cliptown_app/src/clip_store.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -164,6 +165,26 @@ void main() {
     expect(result.rejectionReason, CaptureRejectionReason.likelySensitive);
     expect(repository.saveCount, 0);
     expect(store.clips, isEmpty);
+  });
+
+  test('retention fast path skips sorting below cap and preserves pinned clips', () {
+    final now = DateTime.utc(2026, 11, 14);
+    final clips = List<ClipItem>.generate(
+      1000,
+      (index) => ClipItem(
+        id: 'clip-$index',
+        kind: ClipKind.text,
+        title: 'clip',
+        text: 'text $index',
+        createdAt: now.add(Duration(microseconds: index)),
+        lastUsedAt: now.add(Duration(microseconds: index)),
+        pinned: index == 0,
+      ),
+    );
+    final before = List<ClipItem>.of(clips);
+    expect(overflowUnpinnedClipIds(clips, 1000), isEmpty);
+    expect(overflowUnpinnedClipIds(clips, 998), <String>{'clip-1'});
+    expect(clips, orderedEquals(before), reason: 'no in-place reordering');
   });
 
   test('retention and size caps exempt pinned items', () async {
