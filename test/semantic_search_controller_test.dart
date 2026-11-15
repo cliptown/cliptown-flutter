@@ -93,7 +93,9 @@ void main() {
 
     controller.setQuery('semantic text');
     repository.notifyIndex();
-    await Future<void>.delayed(Duration.zero);
+    // Broadcast delivery and the zero-duration refresh timer use separate
+    // event turns; assert after both have executed rather than racing them.
+    await Future<void>.delayed(const Duration(milliseconds: 20));
     expect(repository.queries, <String>['semantic text']);
 
     repository.resolve('semantic text', <String>['match']);
