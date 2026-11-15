@@ -421,6 +421,9 @@ final class MiniLmSemanticClipRepository
     if (model case final DisposableLocalTextEmbeddingModel disposable) {
       await disposable.dispose();
     }
+    if (history case final ClosableClipRepository closable) {
+      await closable.close();
+    }
   }
 
   Future<int> embeddingCount() async =>
