@@ -60,7 +60,7 @@ EXEMPT_PATH = re.compile(
 # is "effects pushed outward", not "no effects" — these are the outward edge.
 EFFECT_BOUNDARY = re.compile(
     r"(^|/)(main|bin|cmd|effects?|io|adapters?|infra|infrastructure|runtime|"
-    r"transport|server|daemon|sidecar|wire|db|store|repository|repositories|"
+    r"transport|server|daemon|sidecar|wire|db|cache|store|repository|repositories|"
     r"handlers?|routes?|middleware|telemetry|otel|logging|log)(/|\.|$)",
     re.IGNORECASE,
 )
@@ -455,6 +455,11 @@ def dart_late(ctx: FileContext) -> Iterator[tuple[str, int, str]]:
       "`throw` as control flow",
       "Return a sealed `Result` union so the failure is part of the signature and the switch over it stays exhaustive.")
 def dart_throw(ctx: FileContext) -> Iterator[tuple[str, int, str]]:
+    # Typed failures from I/O, native runtime and persistence boundaries are
+    # exceptional effects, not use of exceptions to steer a pure calculation.
+    # Keep the stricter rule for state transformations and application logic.
+    if ctx.is_effect_boundary:
+        return iter(())
     return scan(ctx, DART_THROW)
 
 
