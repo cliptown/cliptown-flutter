@@ -5,6 +5,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:sqlite3/sqlite3.dart';
 
 import 'clip_item.dart';
@@ -16,7 +17,7 @@ import 'minilm_embedder.dart';
 /// remain owned by [history]. Only clip IDs, SHA-256s and vectors are stored
 /// here; deleting history also erases the derived index.
 final class MiniLmSemanticClipRepository
-    implements ClipRepository, SemanticClipRepository {
+    implements ClipRepository, SemanticClipRepository, SemanticClipRepositoryUpdates {
   MiniLmSemanticClipRepository({
     required this.history,
     required this.indexPath,
@@ -37,6 +38,7 @@ final class MiniLmSemanticClipRepository
 
   /// Notification allows an already-visible query to refresh as indexing
   /// progresses, instead of requiring the user to retype it.
+  @override
   Stream<void> get indexUpdates => _changes.stream;
 
   @override
@@ -280,6 +282,25 @@ final class MiniLmSemanticClipRepository
     }
     if (!_changes.isClosed) _changes.add(null);
   }
+}
+
+Future<MiniLmSemanticClipRepository> createPlatformMiniLmRepository(
+  ClipRepository history,
+) async {
+  final support = await getApplicationSupportDirectory();
+  final root = Directory(
+    '${support.path}${Platform.pathSeparator}ClipTown',
+  );
+  return MiniLmSemanticClipRepository(
+    history: history,
+    indexPath: '${root.path}${Platform.pathSeparator}semantic-minilm-v1.db',
+    model: MiniLmOnDeviceEmbedder(
+      modelDirectory: Directory(
+        '${root.path}${Platform.pathSeparator}models'
+        '${Platform.pathSeparator}minilm-l6-v2-q4',
+      ),
+    ),
+  );
 }
 
 final class SqliteMiniLmSearchResult {
