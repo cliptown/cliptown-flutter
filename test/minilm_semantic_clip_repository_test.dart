@@ -8,6 +8,7 @@ import 'package:cliptown_app/history/minilm_embedder.dart';
 import 'package:cliptown_app/history/minilm_semantic_clip_repository.dart';
 import 'package:cliptown_app/src/clip_store.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:sqlite3/sqlite3.dart';
 
 import 'test_support.dart';
 
@@ -132,6 +133,58 @@ void main() {
     await repo.clear();
   });
 
+  test('transient embedding failure can recover on next history save', () async {
+    final model = _TransientFailureEmbedder();
+    final repo = newRepository(embedder: model);
+    final clips = await repo.load();
+    await repo.waitForIndexing();
+    expect(await repo.embeddingCount(), 0);
+
+    await repo.save(clips);
+    await repo.waitForIndexing();
+    expect(await repo.embeddingCount(), 2);
+    expect(await repo.semanticSearchIds('software rollout release'),
+        contains('deploy-command'));
+    await repo.clear();
+  });
+
+  test('reconciles a truncated vector without rewriting the clip', () async {
+    final model = _FakeMeaningEmbedder();
+    final repo = newRepository(embedder: model);
+    final clips = await repo.load();
+    await repo.waitForIndexing();
+    final db = sqlite3.open(indexPath);
+    db.execute(
+      "UPDATE vectors SET embedding = x'00' WHERE clip_id = 'deploy-command'",
+    );
+    db.close();
+
+    await repo.save(clips);
+    await repo.waitForIndexing();
+    expect(await repo.embeddingCount(), 2);
+    expect(model.calls, 3);
+    expect(await repo.semanticSearchIds('software rollout release'),
+        contains('deploy-command'));
+    await repo.clear();
+  });
+
+  test('non-finite persisted embeddings never enter ranked results', () async {
+    final repo = newRepository();
+    await repo.load();
+    await repo.waitForIndexing();
+    final bad = List<double>.filled(localEmbeddingDimensions, 0)
+      ..[0] = double.nan;
+    final db = sqlite3.open(indexPath);
+    db.execute(
+      'UPDATE vectors SET embedding = ? WHERE clip_id = ?',
+      <Object?>[encodeLocalEmbedding(bad), 'deploy-command'],
+    );
+    db.close();
+
+    expect(await repo.semanticSearchIds('software rollout release'), isEmpty);
+    await repo.clear();
+  });
+
   test('vector codec still accepts exactly 384 floats', () {
     final fake = List<double>.filled(localEmbeddingDimensions, 0)..[0] = 1;
     expect(decodeLocalEmbedding(encodeLocalEmbedding(fake)), fake);
@@ -170,3 +223,15 @@ class _DelayedMeaningEmbedder extends _FakeMeaningEmbedder {
     return super.embed(text);
   }
 }
+
+class _TransientFailureEmbedder extends _FakeMeaningEmbedder {
+  bool failFirst = true;
+
+  @override
+  Future<List<double>> embed(String text) async {
+    if (failFirst) {
+      failFirst = false;
+      throw const FormatException('temporary model load failure');
+    }
+    return super.embed(text);
+  }

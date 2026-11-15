@@ -31,8 +31,9 @@ llama.cpp via `llamadart` in the Flutter desktop process. It produces 384
 normalized dimensions. On first use, ClipTown fetches **model weights only**
 over HTTPS, limits the download to 32 MiB, verifies their pinned SHA-256, and
 atomically installs the verified file. After that it works offline. An offline
-first launch or failed model check leaves lexical search available; indexing
-can resume after a subsequent startup or history modification.
+first launch or failed model check leaves lexical search available. Failed
+model loading can retry on a subsequent search or history modification;
+interrupted downloads are bounded and partial weights are discarded.
 
 The model identity is distinct from the historical `cliptown-fnv1a-v1`
 token-hash vector baseline. Old hashed vectors are never mixed with MiniLM.
@@ -52,7 +53,8 @@ token-hash vector baseline. Old hashed vectors are never mixed with MiniLM.
    retrieval fixtures before changing it.
 
 MiniLM is English-focused and intended for sentences/paragraphs. Longer
-clipboard entries are bounded to the first 4096 characters for encoding;
+clipboard entries are bounded to the first 4096 characters and then reduced
+to at most 240 actual model tokens for encoding;
 lexical search continues to cover the full content. This initial release uses
 a linear exact cosine scan of available vectors; evaluate a native ANN index
 once histories become large. The index doesn't store full text, snippets,

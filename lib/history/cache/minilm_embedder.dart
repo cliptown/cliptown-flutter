@@ -51,7 +51,7 @@ final class MiniLmOnDeviceEmbedder
     // MiniLM is trained on short spans. Avoid feeding huge clipboard payloads
     // through the native tokenizer; lexical search still sees the full text.
     var bounded = text.length > 4096 ? text.substring(0, 4096) : text;
-    final engine = await (_loading ??= _loadEngine());
+    final engine = await _ensureEngine();
     // BERT-family GGUF encoders evaluate an entire input in one micro-batch.
     // Count real model tokens rather than assuming a character limit is safe.
     while (bounded.length > 1 && await engine.getTokenCount(bounded) > 240) {
@@ -84,6 +84,18 @@ final class MiniLmOnDeviceEmbedder
       }
     }
     _loading = null;
+  }
+
+  // A first-launch offline failure must not poison this session forever.
+  // A subsequent save/search can retry once the model is available.
+  Future<LlamaEngine> _ensureEngine() async {
+    final loading = _loading ??= _loadEngine();
+    try {
+      return await loading;
+    } on Object {
+      if (identical(_loading, loading)) _loading = null;
+      rethrow;
+    }
   }
 
   Future<LlamaEngine> _loadEngine() async {
@@ -120,8 +132,10 @@ Future<File> ensureMiniLmModelFile(Directory directory) async {
   final partial = File('${model.path}.partial');
   final client = HttpClient()..connectionTimeout = const Duration(seconds: 20);
   try {
-    final request = await client.getUrl(Uri.parse(miniLmDownloadUrl));
-    final response = await request.close();
+    final request = await client
+        .getUrl(Uri.parse(miniLmDownloadUrl))
+        .timeout(const Duration(seconds: 20));
+    final response = await request.close().timeout(const Duration(seconds: 20));
     if (response.statusCode != HttpStatus.ok ||
         response.contentLength > _maxModelBytes) {
       throw const FileSystemException('MiniLM model download failed');
@@ -129,7 +143,11 @@ Future<File> ensureMiniLmModelFile(Directory directory) async {
     final sink = partial.openWrite();
     var written = 0;
     try {
-      await for (final bytes in response) {
+      final started = Stopwatch()..start();
+      await for (final bytes in response.timeout(const Duration(seconds: 30))) {
+        if (started.elapsed > const Duration(minutes: 2)) {
+          throw const FileSystemException('MiniLM download timed out');
+        }
         written += bytes.length;
         if (written > _maxModelBytes) {
           throw const FileSystemException('MiniLM model exceeds size limit');

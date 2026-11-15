@@ -159,6 +159,12 @@ final class MiniLmSemanticClipRepository
         'DELETE FROM vectors WHERE clip_id NOT IN '
         '(SELECT clip_id FROM _active_clip_ids)',
       );
+      // Rebuild truncated/corrupt blobs even if the clip text was unchanged.
+      db.execute(
+        'UPDATE vectors SET embedding = NULL, indexed_at = NULL '
+        'WHERE embedding IS NOT NULL AND length(embedding) != ?',
+        <Object?>[localEmbeddingDimensions * Float32List.bytesPerElement],
+      );
       _pending.clear();
       for (final entry in desired.entries) {
         upsert.execute(<Object?>[
@@ -252,13 +258,14 @@ final class MiniLmSemanticClipRepository
     final matches = <SqliteMiniLmSearchResult>[];
     for (final row in rows) {
       try {
+        final vector = decodeLocalEmbedding(row['embedding'] as Uint8List);
+        if (vector.any((value) => !value.isFinite)) continue;
+        final distance = localEmbeddingCosineDistance(queryVector, vector);
+        if (!distance.isFinite) continue;
         matches.add(
           SqliteMiniLmSearchResult(
             clipId: row['clip_id'] as String,
-            distance: localEmbeddingCosineDistance(
-              queryVector,
-              decodeLocalEmbedding(row['embedding'] as Uint8List),
-            ),
+            distance: distance.clamp(0.0, 2.0).toDouble(),
           ),
         );
       } on FormatException {
