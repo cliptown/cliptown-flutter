@@ -13,8 +13,8 @@ void main() {
       final temp = await Directory.systemTemp.createTemp(
         'cliptown-live-minilm-',
       );
+      final model = MiniLmOnDeviceEmbedder(modelDirectory: temp);
       try {
-        final model = MiniLmOnDeviceEmbedder(modelDirectory: temp);
         final a = await model.embed('A person buys a pair of sneakers.');
         final b = await model.embed('Someone purchases new athletic shoes.');
         final unrelated = await model.embed('The storm produced strong winds.');
@@ -24,6 +24,7 @@ void main() {
           lessThan(localEmbeddingCosineDistance(a, unrelated)),
         );
       } finally {
+        await model.dispose();
         await temp.delete(recursive: true);
       }
     },
