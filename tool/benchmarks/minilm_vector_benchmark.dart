@@ -66,7 +66,7 @@ Future<Map<String, Object>> _runCase(int count) async {
       'vector_count': count,
       'index_insert_ms': writeClock.elapsedMicroseconds / 1000,
       'query_p50_ms': _medianOfFive(samples),
-      'query_p95_ms': samples.reduce(math.max),
+      'query_p95_ms': samples.reduce((a, b) => a > b ? a : b),
       'sqlite_file_bytes': File(path).lengthSync(),
       'process_rss_bytes': ProcessInfo.currentRss,
     };
@@ -129,8 +129,9 @@ Future<List<double>> _measureQueries(
   );
   timer.stop();
   if (matches.retainedCount() != 20) {
-    stderr.writeln('Expected exactly 20 ranked search results');
-    exit(1);
+    return Future<List<double>>.error(
+      StateError('Expected exactly 20 ranked search results'),
+    );
   }
   final more = await _measureQueries(db, query, magnitude, remaining - 1);
   return <double>[timer.elapsedMicroseconds / 1000, ...more];
