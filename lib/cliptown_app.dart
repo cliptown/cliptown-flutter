@@ -706,19 +706,25 @@ class _ClipTownHomeState extends State<ClipTownHome> {
     final header = Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
-        Text(
-          'Your clipboard, private and useful.',
-          style: Theme.of(context).textTheme.headlineMedium,
+        // The privacy explanation is the headline's tooltip, not body text.
+        Align(
+          alignment: Alignment.centerLeft,
+          child: Tooltip(
+            key: const Key('security-boundary-copy'),
+            message: !localWorkAllowed
+                ? 'Encrypted history is locked. ClipTown refuses to capture or '
+                      'fall back to plaintext.'
+                : 'History is encrypted locally. Likely secrets are skipped by '
+                      'default, and cloud sync remains off until reviewed key '
+                      'management is connected.',
+            child: Text(
+              'Your clipboard, private and useful.',
+              key: const Key('app-headline'),
+              style: Theme.of(context).textTheme.headlineSmall,
+            ),
+          ),
         ),
-        const SizedBox(height: 6),
-        Text(
-          !localWorkAllowed
-              ? 'Encrypted history is locked. ClipTown refuses to capture or fall back to plaintext.'
-              : 'History is encrypted locally. Likely secrets are skipped by default, and cloud sync remains off until reviewed key management is connected.',
-          key: const Key('security-boundary-copy'),
-          style: Theme.of(context).textTheme.bodyMedium,
-        ),
-        const SizedBox(height: 14),
+        const SizedBox(height: 10),
         _StatusBanner(
           // Persistent state only; one-off results ("Existing item moved to
           // the top", "Copied") are shown as toasts (see _showStatusToast).
@@ -732,10 +738,11 @@ class _ClipTownHomeState extends State<ClipTownHome> {
           isError:
               !localWorkAllowed || clipboardController.errorMessage != null,
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: 10),
       ],
     );
-    // Search and filters stay pinned above the list. Inside the scroll view
+    // Headline, status, capture bar, search and filters stay pinned above
+    // the list, in that order. Inside the scroll view
     // the search field was unmounted when scrolled away and, on refocus
     // (window activation, summon, autofocus), scrolled the list back to the
     // top, which made clicks on rows lower down appear to jump.
@@ -743,6 +750,7 @@ class _ClipTownHomeState extends State<ClipTownHome> {
       key: const Key('clip-controls'),
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
+        header,
         _buildCaptureBar(),
         const SizedBox(height: 10),
         _buildSearch(),
@@ -759,81 +767,88 @@ class _ClipTownHomeState extends State<ClipTownHome> {
     return ClipDropZone(
       enabled: localWorkAllowed,
       onDropped: (snapshots) => unawaited(_addDropped(snapshots)),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: <Widget>[
-          controls,
-          Expanded(
-            child: CustomScrollView(
-              key: const Key('clip-history-scroll'),
-              slivers: <Widget>[
-                SliverToBoxAdapter(child: header),
-                if (clips.isEmpty)
-                  SliverFillRemaining(
-                    hasScrollBody: false,
-                    child: _EmptyHistory(
-                      hasQuery: store.query.trim().isNotEmpty,
-                    ),
-                  )
-                else
-                  SliverPadding(
-                    padding: const EdgeInsets.only(bottom: 88),
-                    sliver: SliverList(
-                      key: const Key('clip-history-list'),
-                      delegate: SliverChildBuilderDelegate(
-                        (context, index) {
-                          if (index.isOdd) return const SizedBox(height: 8);
-                          final clipIndex = index ~/ 2;
-                          final clip = clips[clipIndex];
-                          final selected = clipIndex == selectedIndex;
-                          return _ExpandingRow(
-                            key: _rowKeyFor(clip.id),
-                            expanded: clip.id == _expandedClipId,
-                            onCollapse: () => _collapseRow(clip.id),
-                            builder: (context, fitExtra, overflowExtra) =>
-                                _ClipCard(
-                                  clip: clip,
-                                  now: now,
-                                  selected: selected,
-                                  extraHeight: fitExtra,
-                                  overflowExtraHeight: overflowExtra,
-                                  quickCopyLabel: clipIndex < 9
-                                      ? '${_isApple ? '⌘' : 'Ctrl+'}${clipIndex + 1}'
-                                      : null,
-                                  onSelect: () => setState(() {
-                                    _selectedIndex = clipIndex;
-                                    _expandedClipId = clip.id;
-                                  }),
-                                  queued: store.isQueued(clip.id),
-                                  onCopy: () => _run(
-                                    () => clipboardController.copy(clip),
-                                  ),
-                                  onToggleQueued: () => _runLocal(
-                                    () => store.toggleQueued(clip.id),
-                                  ),
-                                  onTogglePinned: () => _runLocal(
-                                    () => store.togglePinned(clip.id),
-                                  ),
-                                  onAction: (action) =>
-                                      _handleClipAction(clip, action),
-                                ),
-                          );
-                        },
-                        childCount: clips.length * 2 - 1,
-                        // Preserve row elements (including expansion/scroll
-                        // state) when an item moves to a different sort index.
-                        findChildIndexCallback: (key) {
-                          final id = _rowIdsByKey[key];
-                          final index = _visibleClipIndices[id];
-                          return index == null ? null : index * 2;
-                        },
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          // Desktop-height windows pin the header; short screens (phones)
+          // scroll it with the list so the clips keep room.
+          final pinHeader = constraints.maxHeight >= pinnedHeaderMinHeight;
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              if (pinHeader) controls,
+              Expanded(
+                child: CustomScrollView(
+                  key: const Key('clip-history-scroll'),
+                  slivers: <Widget>[
+                    if (!pinHeader) SliverToBoxAdapter(child: controls),
+                    if (clips.isEmpty)
+                      SliverFillRemaining(
+                        hasScrollBody: false,
+                        child: _EmptyHistory(
+                          hasQuery: store.query.trim().isNotEmpty,
+                        ),
+                      )
+                    else
+                      SliverPadding(
+                        padding: const EdgeInsets.only(bottom: 88),
+                        sliver: SliverList(
+                          key: const Key('clip-history-list'),
+                          delegate: SliverChildBuilderDelegate(
+                            (context, index) {
+                              if (index.isOdd) return const SizedBox(height: 8);
+                              final clipIndex = index ~/ 2;
+                              final clip = clips[clipIndex];
+                              final selected = clipIndex == selectedIndex;
+                              return _ExpandingRow(
+                                key: _rowKeyFor(clip.id),
+                                expanded: clip.id == _expandedClipId,
+                                onCollapse: () => _collapseRow(clip.id),
+                                builder: (context, fitExtra, overflowExtra) =>
+                                    _ClipCard(
+                                      clip: clip,
+                                      now: now,
+                                      selected: selected,
+                                      extraHeight: fitExtra,
+                                      overflowExtraHeight: overflowExtra,
+                                      quickCopyLabel: clipIndex < 9
+                                          ? '${_isApple ? '⌘' : 'Ctrl+'}${clipIndex + 1}'
+                                          : null,
+                                      onSelect: () => setState(() {
+                                        _selectedIndex = clipIndex;
+                                        _expandedClipId = clip.id;
+                                      }),
+                                      queued: store.isQueued(clip.id),
+                                      onCopy: () => _run(
+                                        () => clipboardController.copy(clip),
+                                      ),
+                                      onToggleQueued: () => _runLocal(
+                                        () => store.toggleQueued(clip.id),
+                                      ),
+                                      onTogglePinned: () => _runLocal(
+                                        () => store.togglePinned(clip.id),
+                                      ),
+                                      onAction: (action) =>
+                                          _handleClipAction(clip, action),
+                                    ),
+                              );
+                            },
+                            childCount: clips.length * 2 - 1,
+                            // Preserve row elements (including expansion/scroll
+                            // state) when an item moves to a different sort index.
+                            findChildIndexCallback: (key) {
+                              final id = _rowIdsByKey[key];
+                              final index = _visibleClipIndices[id];
+                              return index == null ? null : index * 2;
+                            },
+                          ),
+                        ),
                       ),
-                    ),
-                  ),
-              ],
-            ),
-          ),
-        ],
+                  ],
+                ),
+              ),
+            ],
+          );
+        },
       ),
     );
   }
@@ -2029,3 +2044,7 @@ class _ExpandingRowState extends State<_ExpandingRow> {
 
 /// Brand pink used to make pinned clips stand out (icon, chip, row edge).
 const Color pinnedAccent = Color(0xffff2e97);
+
+/// Below this body height (phones) the header scrolls with the list instead
+/// of being pinned, so the clips keep room.
+const double pinnedHeaderMinHeight = 560;
