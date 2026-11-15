@@ -16,7 +16,7 @@ void main() {
       final id = 'clip-${i.toString().padLeft(6, '0')}';
       heap.offer(id, distance);
       reference.add(ClipVectorMatch(id, distance));
-      expect(heap.retainedCount, lessThanOrEqualTo(limit));
+      expect(heap.retainedCount(), lessThanOrEqualTo(limit));
     }
     reference.sort((a, b) {
       final score = a.distance.compareTo(b.distance);
@@ -73,6 +73,6 @@ void main() {
     heap.offer('a', 0.8);
     heap.offer('ignored', double.nan);
     expect(heap.sorted().map((hit) => hit.clipId), <String>['x', 'y']);
-    expect(heap.retainedCount, 2);
+    expect(heap.retainedCount(), 2);
   });
 }
