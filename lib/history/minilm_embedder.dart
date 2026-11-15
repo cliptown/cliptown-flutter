@@ -83,8 +83,7 @@ Future<File> ensureMiniLmModelFile(Directory directory) async {
   if (await model.exists() && await _matchesModelDigest(model)) return model;
 
   final partial = File('${model.path}.partial');
-  final client = HttpClient()
-    ..connectionTimeout = const Duration(seconds: 20);
+  final client = HttpClient()..connectionTimeout = const Duration(seconds: 20);
   try {
     final request = await client.getUrl(Uri.parse(miniLmDownloadUrl));
     final response = await request.close();
