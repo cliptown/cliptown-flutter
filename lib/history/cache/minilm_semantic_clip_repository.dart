@@ -37,6 +37,7 @@ final class MiniLmSemanticClipRepository
   final StreamController<void> _changes = StreamController<void>.broadcast();
   Database? _database;
   Future<void>? _indexing;
+  Future<void>? _closing;
   int _generation = 0;
   bool _indexAvailable = true;
 
@@ -286,7 +287,9 @@ final class MiniLmSemanticClipRepository
 
   /// Close native SQLite resources without erasing the persisted index.
   @override
-  Future<void> close() async {
+  Future<void> close() => _closing ??= _closeOnce();
+
+  Future<void> _closeOnce() async {
     _indexAvailable = false;
     _generation += 1;
     _pending.clear();
@@ -309,6 +312,7 @@ final class MiniLmSemanticClipRepository
 
   @override
   Future<void> clear() async {
+    if (_closing case final pending?) await pending;
     await history.clear();
     _generation += 1;
     _pending.clear();
