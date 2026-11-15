@@ -105,7 +105,8 @@ class SqliteClipRepository implements ClipRepository, SemanticClipRepository {
             clip.pinned ? 1 : 0,
           ]);
           if (generateLegacyEmbeddings &&
-              clip.text != null && clip.text!.trim().isNotEmpty) {
+              clip.text != null &&
+              clip.text!.trim().isNotEmpty) {
             embeddingStatement.execute(<Object?>[
               clip.id,
               localEmbeddingModel,
