@@ -1,3 +1,5 @@
+import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:cliptown_app/history/clip_repository.dart';
@@ -23,7 +25,6 @@ void main() {
   });
 
   MiniLmSemanticClipRepository newRepository({
-    List<dynamic>? unused,
     LocalTextEmbeddingModel? embedder,
     MemoryClipRepository? history,
   }) {
@@ -49,9 +50,10 @@ void main() {
 
     // The search cache does not persist copied clipboard plaintext.
     final bytes = await File(indexPath).readAsBytes();
-    expect(bytes, isNot(containsAll(<int>[107, 117, 98, 101, 99, 116, 108])));
+    expect(utf8.decode(bytes, allowMalformed: true), isNot(contains('kubectl')));
 
     // Restarting with the same index reuses vectors instead of rebuilding.
+    await repo.close();
     final restartedHistory = MemoryClipRepository(seed: original);
     final restartedModel = _FakeMeaningEmbedder();
     final reopened = newRepository(
