@@ -91,7 +91,11 @@ class SqliteClipRepository
       );
       database.execute('COMMIT');
       // Publish the snapshot only after SQLite confirms the commit.
-      _persistence.recordSave(plan.applyCommitted(), _dataVersion(database), stats);
+      _persistence.recordSave(
+        plan.applyCommitted(),
+        _dataVersion(database),
+        stats,
+      );
     } on Object catch (error) {
       try {
         database.execute('ROLLBACK');
