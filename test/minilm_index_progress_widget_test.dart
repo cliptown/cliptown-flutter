@@ -35,7 +35,10 @@ void main() {
       ),
     );
     await tester.pump();
-    expect(find.textContaining('Downloading MiniLM model: 40%'), findsOneWidget);
+    expect(
+      find.textContaining('Downloading MiniLM model: 40%'),
+      findsOneWidget,
+    );
 
     repository.publish(
       const SemanticIndexProgress(
@@ -53,7 +56,10 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(repository.retries.value, 1);
-    expect(find.textContaining('Meaning search ready (2 clips)'), findsOneWidget);
+    expect(
+      find.textContaining('Meaning search ready (2 clips)'),
+      findsOneWidget,
+    );
     expect(find.text('Deploy command'), findsOneWidget);
 
     await tester.pumpWidget(const SizedBox.shrink());
@@ -66,12 +72,12 @@ final class _ProgressRepository
     implements ClipRepository, SemanticIndexProgressSource {
   final BehaviorSubject<SemanticIndexProgress> _events =
       BehaviorSubject<SemanticIndexProgress>.seeded(
-    const SemanticIndexProgress(
-      phase: SemanticIndexPhase.preparing,
-      indexed: 0,
-      total: 2,
-    ),
-  );
+        const SemanticIndexProgress(
+          phase: SemanticIndexPhase.preparing,
+          indexed: 0,
+          total: 2,
+        ),
+      );
   final ValueNotifier<int> retries = ValueNotifier<int>(0);
 
   @override
@@ -87,11 +93,13 @@ final class _ProgressRepository
   @override
   Future<void> retrySemanticIndex() async {
     retries.value += 1;
-    publish(const SemanticIndexProgress(
-      phase: SemanticIndexPhase.ready,
-      indexed: 2,
-      total: 2,
-    ));
+    publish(
+      const SemanticIndexProgress(
+        phase: SemanticIndexPhase.ready,
+        indexed: 2,
+        total: 2,
+      ),
+    );
   }
 
   Future<void> close() => _events.close();

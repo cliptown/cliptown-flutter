@@ -42,13 +42,15 @@ final class SemanticIndexProgress {
 
   String get label => switch (phase) {
     SemanticIndexPhase.preparing => 'Preparing offline search',
-    SemanticIndexPhase.downloading => downloadPercent == null
-        ? 'Downloading MiniLM model'
-        : 'Downloading MiniLM model: $downloadPercent%',
+    SemanticIndexPhase.downloading =>
+      downloadPercent == null
+          ? 'Downloading MiniLM model'
+          : 'Downloading MiniLM model: $downloadPercent%',
     SemanticIndexPhase.indexing => 'Indexing $indexed of $total clips locally',
-    SemanticIndexPhase.ready => total == 0
-        ? 'Local semantic search available'
-        : 'Meaning search ready ($total clips)',
+    SemanticIndexPhase.ready =>
+      total == 0
+          ? 'Local semantic search available'
+          : 'Meaning search ready ($total clips)',
     SemanticIndexPhase.unavailable =>
       'Meaning search paused; exact search still works',
   };

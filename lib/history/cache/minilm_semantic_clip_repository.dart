@@ -40,12 +40,12 @@ final class MiniLmSemanticClipRepository
   final StreamController<void> _changes = StreamController<void>.broadcast();
   final BehaviorSubject<SemanticIndexProgress> _progress =
       BehaviorSubject<SemanticIndexProgress>.seeded(
-    const SemanticIndexProgress(
-      phase: SemanticIndexPhase.preparing,
-      indexed: 0,
-      total: 0,
-    ),
-  );
+        const SemanticIndexProgress(
+          phase: SemanticIndexPhase.preparing,
+          indexed: 0,
+          total: 0,
+        ),
+      );
   // Reuse query embeddings while the backfill changes index revisions.
   // Bounded LRU: query text must not grow indefinitely in process memory.
   final LinkedHashMap<String, Future<List<double>>> _queryEmbeddings =
@@ -82,12 +82,15 @@ final class MiniLmSemanticClipRepository
   }
 
   void _reportIndexProgress(int indexed, int total) {
-    _publishProgress(SemanticIndexProgress(
-      phase: indexed >= total ? SemanticIndexPhase.ready
-          : SemanticIndexPhase.indexing,
-      indexed: indexed,
-      total: total,
-    ));
+    _publishProgress(
+      SemanticIndexProgress(
+        phase: indexed >= total
+            ? SemanticIndexPhase.ready
+            : SemanticIndexPhase.indexing,
+        indexed: indexed,
+        total: total,
+      ),
+    );
   }
 
   /// Called only by the local native model's weight download callback.
@@ -96,12 +99,14 @@ final class MiniLmSemanticClipRepository
     final percent = expectedBytes != null && expectedBytes > 0
         ? (100 * bytes ~/ expectedBytes).clamp(0, 100).toInt()
         : null;
-    _publishProgress(SemanticIndexProgress(
-      phase: SemanticIndexPhase.downloading,
-      indexed: _progress.value.indexed,
-      total: _progress.value.total,
-      downloadPercent: percent,
-    ));
+    _publishProgress(
+      SemanticIndexProgress(
+        phase: SemanticIndexPhase.downloading,
+        indexed: _progress.value.indexed,
+        total: _progress.value.total,
+        downloadPercent: percent,
+      ),
+    );
   }
 
   @override
@@ -130,11 +135,13 @@ final class MiniLmSemanticClipRepository
       _hasIndexedSnapshot = false;
       _database?.close();
       _database = null;
-      _publishProgress(SemanticIndexProgress(
-        phase: SemanticIndexPhase.unavailable,
-        indexed: _progress.value.indexed,
-        total: _progress.value.total,
-      ));
+      _publishProgress(
+        SemanticIndexProgress(
+          phase: SemanticIndexPhase.unavailable,
+          indexed: _progress.value.indexed,
+          total: _progress.value.total,
+        ),
+      );
     }
   }
 
@@ -225,10 +232,7 @@ final class MiniLmSemanticClipRepository
     _lastDesired = desired;
     _hasIndexedSnapshot = true;
     _needsRecovery = false;
-    _reportIndexProgress(
-      desired.length - _pending.length,
-      desired.length,
-    );
+    _reportIndexProgress(desired.length - _pending.length, desired.length);
     // Invalidate query and indexing work started against an older clip set.
     _generation += 1;
     _startIndexing();
@@ -330,7 +334,10 @@ final class MiniLmSemanticClipRepository
         );
         indexed += 1;
         if (indexed % 8 == 0 || _pending.isEmpty) {
-          _reportIndexProgress(startingIndexed + indexed, _progress.value.total);
+          _reportIndexProgress(
+            startingIndexed + indexed,
+            _progress.value.total,
+          );
         }
         if (indexed % 8 == 0 && !_changes.isClosed) _changes.add(null);
       } on Object {
@@ -338,11 +345,13 @@ final class MiniLmSemanticClipRepository
         // next mutation. Never replace semantic results with hash embeddings.
         _needsRecovery = true;
         _pending.clear();
-        _publishProgress(SemanticIndexProgress(
-          phase: SemanticIndexPhase.unavailable,
-          indexed: _progress.value.indexed,
-          total: _progress.value.total,
-        ));
+        _publishProgress(
+          SemanticIndexProgress(
+            phase: SemanticIndexPhase.unavailable,
+            indexed: _progress.value.indexed,
+            total: _progress.value.total,
+          ),
+        );
         break;
       }
     }

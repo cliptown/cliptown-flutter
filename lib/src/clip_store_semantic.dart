@@ -11,7 +11,9 @@ extension ClipStoreSemanticProgress on ClipStore {
 
   StreamSubscription<SemanticIndexProgress>? _watchSemanticProgress() {
     if (_repository case final SemanticIndexProgressSource provider) {
-      return provider.indexProgressUpdates.listen((_) => _notifySemanticProgress());
+      return provider.indexProgressUpdates.listen(
+        (_) => _notifySemanticProgress(),
+      );
     }
     return null;
   }

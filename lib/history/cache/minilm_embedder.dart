@@ -150,9 +150,7 @@ Future<File> ensureMiniLmModelFile(
         response.contentLength > _maxModelBytes) {
       throw const FileSystemException('MiniLM model download failed');
     }
-    final expected = response.contentLength > 0
-        ? response.contentLength
-        : null;
+    final expected = response.contentLength > 0 ? response.contentLength : null;
     onDownloadProgress?.call(0, expected);
     final sink = partial.openWrite();
     var written = 0;
