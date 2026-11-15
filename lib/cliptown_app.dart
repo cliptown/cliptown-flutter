@@ -236,7 +236,7 @@ class _ClipTownHomeState extends State<ClipTownHome> {
   /// animation) across selection changes and lets the selection scroll into
   /// view.
   final Map<String, GlobalKey> _rowKeys = <String, GlobalKey>{};
-  final Map<Key, String> _rowIdsByKey = <Key, String>{};
+  final Expando<String> _rowIdsByKey = Expando<String>('clip row ids');
   final Map<String, int> _visibleClipIndices = <String, int>{};
   String? _expandedClipId;
 
@@ -692,13 +692,9 @@ class _ClipTownHomeState extends State<ClipTownHome> {
       for (final (index, clip) in clips.indexed) {
         _visibleClipIndices[clip.id] = index;
       }
-      final staleIds = _rowKeys.keys
-          .where((id) => !_visibleClipIndices.containsKey(id))
-          .toList();
-      for (final id in staleIds) {
-        final key = _rowKeys.remove(id);
-        if (key != null) _rowIdsByKey.remove(key);
-      }
+      _rowKeys.removeWhere(
+        (id, _) => !_visibleClipIndices.containsKey(id),
+      );
       if (_expandedClipId case final id?
           when !_visibleClipIndices.containsKey(id)) {
         _expandedClipId = null;
