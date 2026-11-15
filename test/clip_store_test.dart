@@ -93,31 +93,34 @@ void main() {
     },
   );
 
-  test('visible clipping order is memoized until search or history changes', () async {
-    final store = await createDemoStore();
-    final original = store.visibleClips;
-    expect(identical(original, store.visibleClips), isTrue);
+  test(
+    'visible clipping order is memoized until search or history changes',
+    () async {
+      final store = await createDemoStore();
+      final original = store.visibleClips;
+      expect(identical(original, store.visibleClips), isTrue);
 
-    // Shell/status/queue events must not create and sort the whole history.
-    store.setStatusMessage('Saved');
-    store.toggleQueued('deploy-command');
-    expect(store.isQueued('deploy-command'), isTrue);
-    expect(identical(original, store.visibleClips), isTrue);
+      // Shell/status/queue events must not create and sort the whole history.
+      store.setStatusMessage('Saved');
+      store.toggleQueued('deploy-command');
+      expect(store.isQueued('deploy-command'), isTrue);
+      expect(identical(original, store.visibleClips), isTrue);
 
-    await store.markUsed('security-notes');
-    final reordered = store.visibleClips;
-    expect(identical(original, reordered), isFalse);
-    expect(identical(reordered, store.visibleClips), isTrue);
+      await store.markUsed('security-notes');
+      final reordered = store.visibleClips;
+      expect(identical(original, reordered), isFalse);
+      expect(identical(reordered, store.visibleClips), isTrue);
 
-    store.setQuery('security');
-    final filtered = store.visibleClips;
-    expect(identical(reordered, filtered), isFalse);
-    expect(identical(filtered, store.visibleClips), isTrue);
+      store.setQuery('security');
+      final filtered = store.visibleClips;
+      expect(identical(reordered, filtered), isFalse);
+      expect(identical(filtered, store.visibleClips), isTrue);
 
-    store.setPinnedOnly(true);
-    expect(identical(filtered, store.visibleClips), isFalse);
-    store.dispose();
-  });
+      store.setPinnedOnly(true);
+      expect(identical(filtered, store.visibleClips), isFalse);
+      store.dispose();
+    },
+  );
 
   test('saved-item limit is configurable and keeps pinned clips', () async {
     final store = await createDemoStore();
@@ -167,25 +170,28 @@ void main() {
     expect(store.clips, isEmpty);
   });
 
-  test('retention fast path skips sorting below cap and preserves pinned clips', () {
-    final now = DateTime.utc(2026, 11, 14);
-    final clips = List<ClipItem>.generate(
-      1000,
-      (index) => ClipItem(
-        id: 'clip-$index',
-        kind: ClipKind.text,
-        title: 'clip',
-        text: 'text $index',
-        createdAt: now.add(Duration(microseconds: index)),
-        lastUsedAt: now.add(Duration(microseconds: index)),
-        pinned: index == 0,
-      ),
-    );
-    final before = List<ClipItem>.of(clips);
-    expect(overflowUnpinnedClipIds(clips, 1000), isEmpty);
-    expect(overflowUnpinnedClipIds(clips, 998), <String>{'clip-1'});
-    expect(clips, orderedEquals(before), reason: 'no in-place reordering');
-  });
+  test(
+    'retention fast path skips sorting below cap and preserves pinned clips',
+    () {
+      final now = DateTime.utc(2026, 11, 14);
+      final clips = List<ClipItem>.generate(
+        1000,
+        (index) => ClipItem(
+          id: 'clip-$index',
+          kind: ClipKind.text,
+          title: 'clip',
+          text: 'text $index',
+          createdAt: now.add(Duration(microseconds: index)),
+          lastUsedAt: now.add(Duration(microseconds: index)),
+          pinned: index == 0,
+        ),
+      );
+      final before = List<ClipItem>.of(clips);
+      expect(overflowUnpinnedClipIds(clips, 1000), isEmpty);
+      expect(overflowUnpinnedClipIds(clips, 998), <String>{'clip-1'});
+      expect(clips, orderedEquals(before), reason: 'no in-place reordering');
+    },
+  );
 
   test('retention and size caps exempt pinned items', () async {
     final now = DateTime.utc(2026, 8, 22, 13);
