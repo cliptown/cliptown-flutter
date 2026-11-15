@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:cliptown_app/history/clip_item.dart';
 import 'package:cliptown_app/history/clip_repository.dart';
 import 'package:cliptown_app/history/local_embedding.dart';
 import 'package:cliptown_app/history/minilm_embedder.dart';
@@ -242,6 +243,50 @@ void main() {
     );
     model.releaseQuery();
     expect(await search, isEmpty);
+    await repo.clear();
+  });
+
+  test('reordering unchanged clips preserves an in-flight query', () async {
+    final model = _BlockedQueryEmbedder();
+    final repo = newRepository(embedder: model);
+    final clips = await repo.load();
+    await repo.waitForIndexing();
+
+    final search = repo.semanticSearchIds('software rollout release');
+    await model.queryStarted.future;
+    await repo.save(clips.reversed.toList());
+    model.releaseQuery();
+
+    expect(await search, contains('deploy-command'));
+    await repo.clear();
+  });
+
+  test('paged vector search produces exact top K past the first batch', () async {
+    final now = DateTime.utc(2026, 11, 14);
+    final many = List<ClipItem>.generate(
+      520,
+      (index) => ClipItem(
+        id: 'clip-${index.toString().padLeft(4, '0')}',
+        kind: ClipKind.text,
+        title: 'Note $index',
+        text: 'ordinary saved note $index',
+        createdAt: now,
+        lastUsedAt: now,
+      ),
+    );
+    final repo = newRepository(
+      history: MemoryClipRepository(seed: many),
+    );
+    await repo.load();
+    await repo.waitForIndexing();
+    expect(await repo.embeddingCount(), 520);
+
+    final results = await repo.vectorSearch('unrelated text', limit: 12);
+    expect(
+      results.map((match) => match.clipId),
+      many.take(12).map((clip) => clip.id),
+    );
+    expect(results, hasLength(12));
     await repo.clear();
   });
 
