@@ -85,7 +85,7 @@ void main() {
       await store.initialize();
 
       store.setQuery('release procedure');
-      await Future<void>.delayed(Duration.zero);
+      await Future<void>.delayed(const Duration(milliseconds: 200));
 
       expect(store.visibleClips.single.id, 'deploy-command');
       expect(repository.lastQuery, 'release procedure');
