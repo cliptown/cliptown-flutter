@@ -14,9 +14,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// Measures the complete application-facing save(List<ClipItem>) call, including
 /// full-history delta planning. No plaintext is uploaded or logged. Do not
 /// use these numbers as production claims without matching hardware tests.
-const bool _runBenchmark = bool.fromEnvironment(
-  'CLIPTOWN_RUN_SQLITE_BENCH',
-);
+const bool _runBenchmark = bool.fromEnvironment('CLIPTOWN_RUN_SQLITE_BENCH');
 
 void main() {
   test(
@@ -77,16 +75,18 @@ void main() {
           final loaded = await repository.load();
           cold.stop();
           expect(loaded, hasLength(count));
-          print(jsonEncode(<String, Object?>{
-            'benchmark': 'cliptown-encrypted-sqlite-incremental',
-            'size': count,
-            'seed_ms': first.elapsedMilliseconds,
-            'pin_p50_ms': _percentile(pinTimes, 0.50),
-            'pin_p95_ms': _percentile(pinTimes, 0.95),
-            'noop_p50_ms': _percentile(noOpTimes, 0.50),
-            'noop_p95_ms': _percentile(noOpTimes, 0.95),
-            'reload_ms': cold.elapsedMilliseconds,
-          }));
+          print(
+            jsonEncode(<String, Object?>{
+              'benchmark': 'cliptown-encrypted-sqlite-incremental',
+              'size': count,
+              'seed_ms': first.elapsedMilliseconds,
+              'pin_p50_ms': _percentile(pinTimes, 0.50),
+              'pin_p95_ms': _percentile(pinTimes, 0.95),
+              'noop_p50_ms': _percentile(noOpTimes, 0.50),
+              'noop_p95_ms': _percentile(noOpTimes, 0.95),
+              'reload_ms': cold.elapsedMilliseconds,
+            }),
+          );
         } finally {
           await repository.clear();
           await directory.delete(recursive: true);
