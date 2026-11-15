@@ -185,6 +185,21 @@ void main() {
     await repo.clear();
   });
 
+  test('vault clear racing with an outstanding query cannot revive results',
+      () async {
+    final model = _BlockedQueryEmbedder();
+    final repo = newRepository(embedder: model);
+    await repo.load();
+    await repo.waitForIndexing();
+    final search = repo.semanticSearchIds('software rollout release');
+    await model.queryStarted.future;
+
+    await repo.clear();
+    model.releaseQuery();
+    expect(await search, isEmpty);
+    expect(await File(indexPath).exists(), isFalse);
+  });
+
   test('vector codec still accepts exactly 384 floats', () {
     final fake = List<double>.filled(localEmbeddingDimensions, 0)..[0] = 1;
     expect(decodeLocalEmbedding(encodeLocalEmbedding(fake)), fake);
@@ -232,6 +247,21 @@ class _TransientFailureEmbedder extends _FakeMeaningEmbedder {
     if (failFirst) {
       failFirst = false;
       throw const FormatException('temporary model load failure');
+    }
+    return super.embed(text);
+  }
+
+class _BlockedQueryEmbedder extends _FakeMeaningEmbedder {
+  final Completer<void> queryStarted = Completer<void>();
+  final Completer<void> _release = Completer<void>();
+
+  void releaseQuery() => _release.complete();
+
+  @override
+  Future<List<double>> embed(String text) async {
+    if (text == 'software rollout release') {
+      queryStarted.complete();
+      await _release.future;
     }
     return super.embed(text);
   }

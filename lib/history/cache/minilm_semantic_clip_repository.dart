@@ -147,9 +147,6 @@ final class MiniLmSemanticClipRepository
          OR vectors.model_id != excluded.model_id
          OR vectors.dimensions != excluded.dimensions
     ''');
-    final missing = db.prepare(
-      'SELECT embedding IS NULL AS missing FROM vectors WHERE clip_id = ?',
-    );
     try {
       db.execute('DELETE FROM _active_clip_ids');
       for (final id in desired.keys) {
@@ -173,14 +170,20 @@ final class MiniLmSemanticClipRepository
           model.modelId,
           localEmbeddingDimensions,
         ]);
-        if (missing.select(<Object?>[entry.key]).single['missing'] == 1) {
+      }
+      // One query replaces a SELECT per clip, keeping 100k-item vaults viable.
+      final missingIds = db
+          .select('SELECT clip_id FROM vectors WHERE embedding IS NULL')
+          .map((row) => row['clip_id'] as String)
+          .toSet();
+      for (final entry in desired.entries) {
+        if (missingIds.contains(entry.key)) {
           _pending[entry.key] = entry.value;
         }
       }
     } finally {
       active.close();
       upsert.close();
-      missing.close();
     }
   }
 
