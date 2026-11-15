@@ -48,20 +48,15 @@ final class MiniLmOnDeviceEmbedder implements LocalTextEmbeddingModel {
 
   Future<LlamaEngine> _loadEngine() async {
     final model = await ensureMiniLmModelFile(modelDirectory);
-    final engine = LlamaEngine(LlamaBackend());
-    try {
-      await engine.loadModel(
-        model.path,
-        modelParams: ModelParams(contextSize: 512, gpuLayers: 0),
-      );
-      if (!engine.supportsEmbeddings) {
-        throw StateError('MiniLM runtime does not support embeddings');
-      }
-      return engine;
-    } on Object {
+    final engine = await LlamaEngine.load(
+      LlamaModel(ModelSource.path(model.path)),
+      params: const ModelParams(contextSize: 512, gpuLayers: 0),
+    );
+    if (!engine.supportsEmbeddings) {
       await engine.dispose();
-      rethrow;
+      throw StateError('MiniLM runtime does not support embeddings');
     }
+    return engine;
   }
 }
 
