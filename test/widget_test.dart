@@ -18,6 +18,22 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Your clipboard, private and useful.'), findsOneWidget);
+    // Headline is pinned at the very top, above search; the privacy text is
+    // its tooltip, not body copy.
+    expect(
+      tester.getRect(find.byKey(const Key('app-headline'))).bottom,
+      lessThan(tester.getRect(find.byKey(const Key('clip-search'))).top),
+    );
+    expect(
+      tester
+          .widget<Tooltip>(find.byKey(const Key('security-boundary-copy')))
+          .message,
+      startsWith('History is encrypted locally.'),
+    );
+    expect(
+      find.text(RegExp(r'^History is encrypted locally').pattern),
+      findsNothing,
+    );
     expect(find.text('Deploy command'), findsOneWidget);
     expect(find.text('Skyline logo'), findsOneWidget);
 
@@ -139,11 +155,18 @@ void main() {
       expect(stateMachine.state.lifecycle, AppLifecyclePhase.foreground);
       expect(stateMachine.state.vault, AppVaultState.locked);
       expect(find.text('Deploy command'), findsNothing);
+      // The lock stays visible in the red banner; the longer explanation is
+      // the headline's tooltip.
       expect(
-        find.text(
-          'Encrypted history is locked. ClipTown refuses to capture or fall back to plaintext.',
-        ),
+        find.text('Encrypted history is locked. Capture remains off.'),
         findsOneWidget,
+      );
+      expect(
+        tester
+            .widget<Tooltip>(find.byKey(const Key('security-boundary-copy')))
+            .message,
+        'Encrypted history is locked. ClipTown refuses to capture or fall '
+        'back to plaintext.',
       );
       final addButton = tester.widget<FloatingActionButton>(
         find.byKey(const Key('add-manual-clip')),
