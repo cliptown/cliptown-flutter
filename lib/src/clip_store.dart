@@ -82,16 +82,18 @@ class ClipStore extends ChangeNotifier {
 
   /// Stable snapshot shared by unrelated UI rebuilds.
   List<ClipItem> get visibleClips {
-    return _visibleMemo.resolve(() => buildVisibleClipSnapshot(
-      _clips,
-      query: _query,
-      pinnedOnly: _pinnedOnly,
-      kindFilter: _kindFilter,
-      collectionFilter: _collectionFilter,
-      semanticMatches: _semanticSearch.matches,
-      semanticRank: _semanticSearch.rankOf,
-      normalizedSearchText: _searchText,
-    ));
+    return _visibleMemo.resolve(
+      () => buildVisibleClipSnapshot(
+        _clips,
+        query: _query,
+        pinnedOnly: _pinnedOnly,
+        kindFilter: _kindFilter,
+        collectionFilter: _collectionFilter,
+        semanticMatches: _semanticSearch.matches,
+        semanticRank: _semanticSearch.rankOf,
+        normalizedSearchText: _searchText,
+      ),
+    );
   }
 
   Future<void> initialize() => _enqueue(() async {
@@ -545,10 +547,7 @@ class ClipStore extends ChangeNotifier {
         .toSet();
     _clips.removeWhere((clip) => removed.contains(clip.id));
 
-    final overflow = overflowUnpinnedClipIds(
-      _clips,
-      _policy.maxHistoryItems,
-    );
+    final overflow = overflowUnpinnedClipIds(_clips, _policy.maxHistoryItems);
     if (overflow.isNotEmpty) {
       removed.addAll(overflow);
       _clips.removeWhere((clip) => removed.contains(clip.id));
