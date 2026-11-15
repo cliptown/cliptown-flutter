@@ -52,11 +52,40 @@ void main() {
     await repository.close();
   });
 
+  test('coalesces index updates during one in-flight semantic search', () async {
+    final repository = _QueuedSemanticRepository();
+    final controller = SemanticSearchController(
+      repository: repository,
+      onChanged: () {},
+      refreshInterval: Duration.zero,
+    )..activate();
+
+    controller.setQuery('search term');
+    repository.notifyIndex();
+    await Future<void>.delayed(const Duration(milliseconds: 10));
+    expect(repository.queries, <String>['search term']);
+
+    repository.notifyIndex();
+    repository.notifyIndex();
+    await Future<void>.delayed(const Duration(milliseconds: 10));
+    expect(repository.queries, hasLength(1));
+
+    repository.resolve('search term', <String>['first']);
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+    expect(repository.queries, hasLength(2));
+    repository.resolve('search term', <String>['second']);
+    await Future<void>.delayed(Duration.zero);
+    expect(controller.matches('second'), isTrue);
+    controller.dispose();
+    await repository.close();
+  });
+
   test('index updates refresh a query without additional typing', () async {
     final repository = _QueuedSemanticRepository();
     final controller = SemanticSearchController(
       repository: repository,
       onChanged: () {},
+      refreshInterval: Duration.zero,
     )..activate();
 
     controller.setQuery('semantic text');
