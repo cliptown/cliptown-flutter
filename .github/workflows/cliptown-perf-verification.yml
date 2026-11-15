@@ -1,0 +1,56 @@
+name: ClipTown performance verification (temporary)
+
+on:
+  push:
+    branches: [ci/cliptown-perf-verification]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  flutter-performance-regressions:
+    name: Flutter analysis, widget and semantic search regression tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout performance source tree
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+          path: cliptown-flutter
+      - name: Checkout sibling interfaces
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+          repository: cliptown/cliptown-interfaces
+          ref: e4e957b5372dc363fe6a52559c8959f0de781efb
+          path: cliptown-interfaces
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+        with:
+          flutter-version: '3.44.2'
+          cache: true
+      - name: Resolve Flutter dependencies
+        working-directory: cliptown-flutter
+        run: flutter pub get
+      - name: Format Dart and print exact patch for review
+        working-directory: cliptown-flutter
+        run: |
+          dart format lib test
+          git diff --check
+          echo 'CLIPTOWN_FORMAT_DIFF_BEGIN'
+          git diff --no-ext-diff --no-color --unified=3 -- lib test
+          echo 'CLIPTOWN_FORMAT_DIFF_END'
+      - name: Check analyzer
+        working-directory: cliptown-flutter
+        run: flutter analyze --fatal-infos --fatal-warnings
+      - name: Run regression tests (search, indexing, rendering, sorting)
+        working-directory: cliptown-flutter
+        run: |
+          flutter test --reporter=expanded \
+            test/bounded_vector_search_test.dart \
+            test/minilm_semantic_clip_repository_test.dart \
+            test/semantic_search_controller_test.dart \
+            test/clip_store_test.dart \
+            test/desktop_ux_widget_test.dart \
+            test/sqlite_clip_repository_test.dart
