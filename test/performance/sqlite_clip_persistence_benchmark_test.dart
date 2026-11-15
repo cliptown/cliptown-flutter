@@ -11,7 +11,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// flutter test --dart-define=CLIPTOWN_RUN_SQLITE_BENCH=true \\
 ///   test/performance/sqlite_clip_persistence_benchmark_test.dart
 ///
-/// Measures the complete application-facing save(List<ClipItem>) call, including
+/// Measures the complete application-facing `save(List<ClipItem>)` call, including
 /// full-history delta planning. No plaintext is uploaded or logged. Do not
 /// use these numbers as production claims without matching hardware tests.
 const bool _runBenchmark = bool.fromEnvironment('CLIPTOWN_RUN_SQLITE_BENCH');
@@ -75,7 +75,7 @@ void main() {
           final loaded = await repository.load();
           cold.stop();
           expect(loaded, hasLength(count));
-          print(
+          stdout.writeln(
             jsonEncode(<String, Object?>{
               'benchmark': 'cliptown-encrypted-sqlite-incremental',
               'size': count,
