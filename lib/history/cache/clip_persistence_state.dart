@@ -36,9 +36,7 @@ final class ClipPersistenceState {
   ClipWriteStats lastStats() => _stats;
 
   void recordLoad(List<ClipItem> clips, int version) {
-    _persisted = <String, ClipItem>{
-      for (final clip in clips) clip.id: clip,
-    };
+    _persisted = <String, ClipItem>{for (final clip in clips) clip.id: clip};
     _dataVersion = version;
   }
 
