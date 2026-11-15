@@ -129,10 +129,7 @@ final class MiniLmSemanticClipRepository
     _startIndexing();
   }
 
-  void _applyDesiredIndex(
-    Database db,
-    Map<String, (String, String)> desired,
-  ) {
+  void _applyDesiredIndex(Database db, Map<String, (String, String)> desired) {
     final active = db.prepare(
       'INSERT INTO _active_clip_ids (clip_id) VALUES (?)',
     );
