@@ -34,7 +34,8 @@ final class MiniLmOnDeviceEmbedder
 
   @override
   Future<List<double>> embed(String text) {
-    if (_disposed) return Future<List<double>>.error(StateError('closed model'));
+    if (_disposed)
+      return Future<List<double>>.error(StateError('closed model'));
     // llama.cpp contexts are not concurrently reentrant. Search and backfill
     // both share this one serialization queue.
     final operation = _tail.then((_) => _embedOnce(text));
