@@ -236,10 +236,15 @@ class _ClipTownHomeState extends State<ClipTownHome> {
   /// animation) across selection changes and lets the selection scroll into
   /// view.
   final Map<String, GlobalKey> _rowKeys = <String, GlobalKey>{};
+  final Map<Key, String> _rowIdsByKey = <Key, String>{};
+  final Map<String, int> _visibleClipIndices = <String, int>{};
   String? _expandedClipId;
 
-  GlobalKey _rowKeyFor(String id) =>
-      _rowKeys.putIfAbsent(id, () => GlobalKey(debugLabel: 'clip-row'));
+  GlobalKey _rowKeyFor(String id) => _rowKeys.putIfAbsent(id, () {
+    final key = GlobalKey(debugLabel: 'clip-row');
+    _rowIdsByKey[key] = id;
+    return key;
+  });
 
   void _collapseRow(String id) {
     if (_expandedClipId == id) setState(() => _expandedClipId = null);
@@ -679,13 +684,27 @@ class _ClipTownHomeState extends State<ClipTownHome> {
   Widget _buildBody(BuildContext context) {
     final localWorkAllowed = stateMachine.state.permitsLocalWork;
     final clips = localWorkAllowed ? store.visibleClips : const <ClipItem>[];
-    _visibleClips = clips;
-    // Forget keys of rows that are no longer in the list.
-    final visibleIds = <String>{for (final clip in clips) clip.id};
-    _rowKeys.removeWhere((id, _) => !visibleIds.contains(id));
-    if (_expandedClipId case final id? when !visibleIds.contains(id)) {
-      _expandedClipId = null;
+    if (!identical(clips, _visibleClips)) {
+      // Only rebuild the lookup when the sorted snapshot changes. Clipboard
+      // monitoring/status notifications frequently rebuild the surrounding
+      // shell without changing the actual history.
+      _visibleClipIndices.clear();
+      for (final (index, clip) in clips.indexed) {
+        _visibleClipIndices[clip.id] = index;
+      }
+      final staleIds = _rowKeys.keys
+          .where((id) => !_visibleClipIndices.containsKey(id))
+          .toList();
+      for (final id in staleIds) {
+        final key = _rowKeys.remove(id);
+        if (key != null) _rowIdsByKey.remove(key);
+      }
+      if (_expandedClipId case final id?
+          when !_visibleClipIndices.containsKey(id)) {
+        _expandedClipId = null;
+      }
     }
+    _visibleClips = clips;
     final selectedIndex = clips.isEmpty
         ? -1
         : _selectedIndex.clamp(0, clips.length - 1);
@@ -789,7 +808,7 @@ class _ClipTownHomeState extends State<ClipTownHome> {
                               _selectedIndex = clipIndex;
                               _expandedClipId = clip.id;
                             }),
-                            queued: store.queuedIds.contains(clip.id),
+                            queued: store.isQueued(clip.id),
                             onCopy: () =>
                                 _run(() => clipboardController.copy(clip)),
                             onToggleQueued: () =>
@@ -800,7 +819,16 @@ class _ClipTownHomeState extends State<ClipTownHome> {
                                 _handleClipAction(clip, action),
                           ),
                         );
-                      }, childCount: clips.length * 2 - 1),
+                      },
+                        childCount: clips.length * 2 - 1,
+                        // Preserve row elements (including expansion/scroll
+                        // state) when an item moves to a different sort index.
+                        findChildIndexCallback: (key) {
+                          final id = _rowIdsByKey[key];
+                          final index = _visibleClipIndices[id];
+                          return index == null ? null : index * 2;
+                        },
+                      ),
                     ),
                   ),
               ],
