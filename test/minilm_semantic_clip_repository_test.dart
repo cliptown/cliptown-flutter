@@ -50,7 +50,10 @@ void main() {
 
     // The search cache does not persist copied clipboard plaintext.
     final bytes = await File(indexPath).readAsBytes();
-    expect(utf8.decode(bytes, allowMalformed: true), isNot(contains('kubectl')));
+    expect(
+      utf8.decode(bytes, allowMalformed: true),
+      isNot(contains('kubectl')),
+    );
 
     // Restarting with the same index reuses vectors instead of rebuilding.
     await repo.close();
@@ -68,29 +71,31 @@ void main() {
     await reopened.clear();
   });
 
-  test('incremental saves preserve unchanged vectors and prune deleted clips',
-      () async {
-    final model = _FakeMeaningEmbedder();
-    final history = MemoryClipRepository(seed: demoClipItems());
-    final repo = newRepository(embedder: model, history: history);
-    final clips = await repo.load();
-    await repo.waitForIndexing();
-    expect(model.calls, 2);
+  test(
+    'incremental saves preserve unchanged vectors and prune deleted clips',
+    () async {
+      final model = _FakeMeaningEmbedder();
+      final history = MemoryClipRepository(seed: demoClipItems());
+      final repo = newRepository(embedder: model, history: history);
+      final clips = await repo.load();
+      await repo.waitForIndexing();
+      expect(model.calls, 2);
 
-    // Pinning or reordering must not trigger another native model pass.
-    await repo.save(clips);
-    await repo.waitForIndexing();
-    expect(model.calls, 2);
+      // Pinning or reordering must not trigger another native model pass.
+      await repo.save(clips);
+      await repo.waitForIndexing();
+      expect(model.calls, 2);
 
-    final kept = clips.where((clip) => clip.id == 'security-notes').toList();
-    await repo.save(kept);
-    await repo.waitForIndexing();
-    expect(await repo.embeddingCount(), 1);
-    expect(await repo.semanticSearchIds('software rollout release'), isEmpty);
+      final kept = clips.where((clip) => clip.id == 'security-notes').toList();
+      await repo.save(kept);
+      await repo.waitForIndexing();
+      expect(await repo.embeddingCount(), 1);
+      expect(await repo.semanticSearchIds('software rollout release'), isEmpty);
 
-    await repo.clear();
-    expect(await File(indexPath).exists(), isFalse);
-  });
+      await repo.clear();
+      expect(await File(indexPath).exists(), isFalse);
+    },
+  );
 
   test('semantic result updates refresh an already-entered search', () async {
     final model = _DelayedMeaningEmbedder();
@@ -104,7 +109,10 @@ void main() {
     await repo.waitForIndexing();
     // Index notifications start another query while the text stays unchanged.
     await Future<void>.delayed(const Duration(milliseconds: 50));
-    expect(store.visibleClips.map((clip) => clip.id), contains('deploy-command'));
+    expect(
+      store.visibleClips.map((clip) => clip.id),
+      contains('deploy-command'),
+    );
 
     store.dispose();
     await repo.clear();
@@ -126,7 +134,8 @@ class _FakeMeaningEmbedder implements LocalTextEmbeddingModel {
   Future<List<double>> embed(String text) async {
     calls += 1;
     final lower = text.toLowerCase();
-    final isDeploy = lower.contains('kubectl') ||
+    final isDeploy =
+        lower.contains('kubectl') ||
         lower.contains('deploy') ||
         lower.contains('software rollout') ||
         lower.contains('release');
