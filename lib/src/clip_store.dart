@@ -10,6 +10,7 @@ import '../history/clip_repository.dart';
 import '../history/clipboard_snapshot.dart';
 import '../history/text_dedupe.dart';
 import 'cache/clip_retention.dart';
+import 'cache/visible_clip_memo.dart';
 import 'clip_store_types.dart';
 import 'visible_clip_sort.dart';
 
@@ -31,7 +32,7 @@ class ClipStore extends ChangeNotifier {
   // ClipItem instances are immutable. Cache the expensive lowercase search
   // projection once per instance; an edited copy gets a fresh cache entry.
   final Expando<String> _searchTextCache = Expando<String>('clip search text');
-  List<ClipItem>? _visibleClipsCache;
+  final VisibleClipMemo _visibleMemo = VisibleClipMemo();
   late final SemanticSearchController _semanticSearch =
       SemanticSearchController(
         repository: _repository,
@@ -68,7 +69,7 @@ class ClipStore extends ChangeNotifier {
   /// Avoid allocating a copy of the entire paste queue for every visible row.
   bool isQueued(String id) => _queuedIds.contains(id);
 
-  void _invalidateVisibleClips() => _visibleClipsCache = null;
+  void _invalidateVisibleClips() => _visibleMemo.invalidate();
 
   String _searchText(ClipItem clip) =>
       _searchTextCache[clip] ??= clip.searchableText;
@@ -81,7 +82,7 @@ class ClipStore extends ChangeNotifier {
 
   /// Stable snapshot shared by unrelated UI rebuilds.
   List<ClipItem> get visibleClips {
-    return _visibleClipsCache ??= buildVisibleClipSnapshot(
+    return _visibleMemo.resolve(() => buildVisibleClipSnapshot(
       _clips,
       query: _query,
       pinnedOnly: _pinnedOnly,
@@ -90,7 +91,7 @@ class ClipStore extends ChangeNotifier {
       semanticMatches: _semanticSearch.matches,
       semanticRank: _semanticSearch.rankOf,
       normalizedSearchText: _searchText,
-    );
+    ));
   }
 
   Future<void> initialize() => _enqueue(() async {
