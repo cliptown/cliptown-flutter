@@ -11,16 +11,28 @@ final class ClipWritePlan {
     required this.updated,
     required this.deletedIds,
     required this.before,
-    required this.after,
   });
 
   final List<ClipItem> inserted;
   final List<ClipItem> updated;
   final List<String> deletedIds;
   final Map<String, ClipItem> before;
-  final Map<String, ClipItem> after;
-
   int get affectedRows => inserted.length + updated.length + deletedIds.length;
+
+  /// Mutate the cached snapshot ONLY after COMMIT. No full 100k-entry map
+  /// allocation on each metadata update, and no changes after a failed write.
+  Map<String, ClipItem> applyCommitted() {
+    for (final id in deletedIds) {
+      before.remove(id);
+    }
+    for (final clip in inserted) {
+      before[clip.id] = clip;
+    }
+    for (final clip in updated) {
+      before[clip.id] = clip;
+    }
+    return before;
+  }
 }
 
 /// Build a deterministic database delta, rejecting duplicate IDs before a
@@ -29,15 +41,14 @@ ClipWritePlan planClipWrites(
   Map<String, ClipItem> persisted,
   List<ClipItem> desired,
 ) {
-  final next = <String, ClipItem>{};
+  final seen = <String>{};
   final added = <ClipItem>[];
   final changed = <ClipItem>[];
 
   for (final clip in desired) {
-    if (next.containsKey(clip.id)) {
+    if (!seen.add(clip.id)) {
       throw const FormatException('duplicate clip ID in history');
     }
-    next[clip.id] = clip;
     final previous = persisted[clip.id];
     if (previous == null) {
       clip.validate();
@@ -53,10 +64,9 @@ ClipWritePlan planClipWrites(
     updated: changed,
     deletedIds: <String>[
       for (final id in persisted.keys)
-        if (!next.containsKey(id)) id,
+        if (!seen.contains(id)) id,
     ],
     before: persisted,
-    after: next,
   );
 }
 
