@@ -50,8 +50,13 @@ final class MiniLmOnDeviceEmbedder
     }
     // MiniLM is trained on short spans. Avoid feeding huge clipboard payloads
     // through the native tokenizer; lexical search still sees the full text.
-    final bounded = text.length > 4096 ? text.substring(0, 4096) : text;
+    var bounded = text.length > 4096 ? text.substring(0, 4096) : text;
     final engine = await (_loading ??= _loadEngine());
+    // BERT-family GGUF encoders evaluate an entire input in one micro-batch.
+    // Count real model tokens rather than assuming a character limit is safe.
+    while (bounded.length > 1 && await engine.getTokenCount(bounded) > 240) {
+      bounded = bounded.substring(0, (bounded.length / 2).ceil());
+    }
     final vector = await engine.embed(bounded, normalize: true);
     if (vector.length != localEmbeddingDimensions ||
         vector.any((value) => !value.isFinite)) {
