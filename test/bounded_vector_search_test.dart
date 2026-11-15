@@ -42,10 +42,7 @@ void main() {
       encodedCosineDistance(query, norm, encodeLocalEmbedding(stored)),
       closeTo(0.4, 0.00001),
     );
-    expect(
-      encodedCosineDistance(query, norm, Uint8List(2)),
-      isNull,
-    );
+    expect(encodedCosineDistance(query, norm, Uint8List(2)), isNull);
     final invalid = List<double>.filled(localEmbeddingDimensions, 0)
       ..[0] = double.nan;
     expect(
@@ -57,22 +54,23 @@ void main() {
       encodedCosineDistance(
         query,
         norm,
-        encodeLocalEmbedding(
-          List<double>.filled(localEmbeddingDimensions, 0),
-        ),
+        encodeLocalEmbedding(List<double>.filled(localEmbeddingDimensions, 0)),
       ),
       isNull,
     );
   });
 
-  test('equal-distance hits are ordered by ID regardless of insertion order', () {
-    final heap = BoundedVectorSearch(2);
-    heap.offer('z', 0.5);
-    heap.offer('y', 0.5);
-    heap.offer('x', 0.5);
-    heap.offer('a', 0.8);
-    heap.offer('ignored', double.nan);
-    expect(heap.sorted().map((hit) => hit.clipId), <String>['x', 'y']);
-    expect(heap.retainedCount(), 2);
-  });
+  test(
+    'equal-distance hits are ordered by ID regardless of insertion order',
+    () {
+      final heap = BoundedVectorSearch(2);
+      heap.offer('z', 0.5);
+      heap.offer('y', 0.5);
+      heap.offer('x', 0.5);
+      heap.offer('a', 0.8);
+      heap.offer('ignored', double.nan);
+      expect(heap.sorted().map((hit) => hit.clipId), <String>['x', 'y']);
+      expect(heap.retainedCount(), 2);
+    },
+  );
 }
