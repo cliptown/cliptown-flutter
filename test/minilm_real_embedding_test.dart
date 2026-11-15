@@ -28,24 +28,26 @@ void main() {
         );
         final now = DateTime.utc(2026, 11, 14);
         final index = MiniLmSemanticClipRepository(
-          history: MemoryClipRepository(seed: <ClipItem>[
-            ClipItem(
-              id: 'shoes',
-              kind: ClipKind.text,
-              title: 'Shoe shopping',
-              text: 'Someone purchases new athletic shoes.',
-              createdAt: now,
-              lastUsedAt: now,
-            ),
-            ClipItem(
-              id: 'storm',
-              kind: ClipKind.text,
-              title: 'Weather report',
-              text: 'The storm produced strong winds.',
-              createdAt: now,
-              lastUsedAt: now,
-            ),
-          ]),
+          history: MemoryClipRepository(
+            seed: <ClipItem>[
+              ClipItem(
+                id: 'shoes',
+                kind: ClipKind.text,
+                title: 'Shoe shopping',
+                text: 'Someone purchases new athletic shoes.',
+                createdAt: now,
+                lastUsedAt: now,
+              ),
+              ClipItem(
+                id: 'storm',
+                kind: ClipKind.text,
+                title: 'Weather report',
+                text: 'The storm produced strong winds.',
+                createdAt: now,
+                lastUsedAt: now,
+              ),
+            ],
+          ),
           indexPath: '${temp.path}${Platform.pathSeparator}semantic.db',
           model: model,
         );
