@@ -36,6 +36,10 @@ final class MiniLmSemanticClipRepository
   final LinkedHashMap<String, (String, String)> _pending =
       LinkedHashMap<String, (String, String)>();
   final StreamController<void> _changes = StreamController<void>.broadcast();
+  // Reuse query embeddings while the backfill changes index revisions.
+  // Bounded LRU: query text must not grow indefinitely in process memory.
+  final LinkedHashMap<String, Future<List<double>>> _queryEmbeddings =
+      LinkedHashMap<String, Future<List<double>>>();
   Database? _database;
   Future<void>? _indexing;
   Future<void>? _closing;
@@ -294,6 +298,26 @@ final class MiniLmSemanticClipRepository
     _tryReconcile(clips);
   }
 
+  Future<List<double>> _embedQuery(String query) {
+    final cached = _queryEmbeddings.remove(query);
+    if (cached != null) {
+      _queryEmbeddings[query] = cached;
+      return cached;
+    }
+    final pending = model.embed(query);
+    _queryEmbeddings[query] = pending;
+    if (_queryEmbeddings.length > 6) {
+      _queryEmbeddings.remove(_queryEmbeddings.keys.first);
+    }
+    // Do not cache failed/offline model loads: a subsequent search must retry.
+    unawaited(pending.then<void>((_) {}, onError: (Object _) {
+      if (identical(_queryEmbeddings[query], pending)) {
+        _queryEmbeddings.remove(query);
+      }
+    }));
+    return pending;
+  }
+
   Future<List<SqliteMiniLmSearchResult>> vectorSearch(
     String query, {
     int limit = 20,
@@ -303,7 +327,7 @@ final class MiniLmSemanticClipRepository
     }
     if (!_indexAvailable || query.trim().isEmpty) return const [];
     final generation = _generation;
-    final queryVector = await model.embed(query);
+    final queryVector = await _embedQuery(query);
     if (generation != _generation) return const [];
     await _resumeUnindexedAfterRecovery(generation);
     if (generation != _generation || !_indexAvailable) return const [];
@@ -372,6 +396,7 @@ final class MiniLmSemanticClipRepository
     _indexAvailable = false;
     _generation += 1;
     _pending.clear();
+    _queryEmbeddings.clear();
     await _indexing;
     _database?.close();
     _database = null;
@@ -398,6 +423,7 @@ final class MiniLmSemanticClipRepository
     _lastDesired = const {};
     _hasIndexedSnapshot = false;
     _needsRecovery = false;
+    _queryEmbeddings.clear();
     _database?.close();
     _database = null;
     for (final suffix in <String>['', '-wal', '-shm']) {
