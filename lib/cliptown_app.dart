@@ -692,9 +692,7 @@ class _ClipTownHomeState extends State<ClipTownHome> {
       for (final (index, clip) in clips.indexed) {
         _visibleClipIndices[clip.id] = index;
       }
-      _rowKeys.removeWhere(
-        (id, _) => !_visibleClipIndices.containsKey(id),
-      );
+      _rowKeys.removeWhere((id, _) => !_visibleClipIndices.containsKey(id));
       if (_expandedClipId case final id?
           when !_visibleClipIndices.containsKey(id)) {
         _expandedClipId = null;
@@ -782,40 +780,45 @@ class _ClipTownHomeState extends State<ClipTownHome> {
                     padding: const EdgeInsets.only(bottom: 88),
                     sliver: SliverList(
                       key: const Key('clip-history-list'),
-                      delegate: SliverChildBuilderDelegate((context, index) {
-                        if (index.isOdd) return const SizedBox(height: 8);
-                        final clipIndex = index ~/ 2;
-                        final clip = clips[clipIndex];
-                        final selected = clipIndex == selectedIndex;
-                        return _ExpandingRow(
-                          key: _rowKeyFor(clip.id),
-                          expanded: clip.id == _expandedClipId,
-                          onCollapse: () => _collapseRow(clip.id),
-                          builder: (context, fitExtra, overflowExtra) => _ClipCard(
-                            clip: clip,
-                            now: now,
-                            selected: selected,
-                            extraHeight: fitExtra,
-                            overflowExtraHeight: overflowExtra,
-                            quickCopyLabel: clipIndex < 9
-                                ? '${_isApple ? '⌘' : 'Ctrl+'}${clipIndex + 1}'
-                                : null,
-                            onSelect: () => setState(() {
-                              _selectedIndex = clipIndex;
-                              _expandedClipId = clip.id;
-                            }),
-                            queued: store.isQueued(clip.id),
-                            onCopy: () =>
-                                _run(() => clipboardController.copy(clip)),
-                            onToggleQueued: () =>
-                                _runLocal(() => store.toggleQueued(clip.id)),
-                            onTogglePinned: () =>
-                                _runLocal(() => store.togglePinned(clip.id)),
-                            onAction: (action) =>
-                                _handleClipAction(clip, action),
-                          ),
-                        );
-                      },
+                      delegate: SliverChildBuilderDelegate(
+                        (context, index) {
+                          if (index.isOdd) return const SizedBox(height: 8);
+                          final clipIndex = index ~/ 2;
+                          final clip = clips[clipIndex];
+                          final selected = clipIndex == selectedIndex;
+                          return _ExpandingRow(
+                            key: _rowKeyFor(clip.id),
+                            expanded: clip.id == _expandedClipId,
+                            onCollapse: () => _collapseRow(clip.id),
+                            builder: (context, fitExtra, overflowExtra) =>
+                                _ClipCard(
+                                  clip: clip,
+                                  now: now,
+                                  selected: selected,
+                                  extraHeight: fitExtra,
+                                  overflowExtraHeight: overflowExtra,
+                                  quickCopyLabel: clipIndex < 9
+                                      ? '${_isApple ? '⌘' : 'Ctrl+'}${clipIndex + 1}'
+                                      : null,
+                                  onSelect: () => setState(() {
+                                    _selectedIndex = clipIndex;
+                                    _expandedClipId = clip.id;
+                                  }),
+                                  queued: store.isQueued(clip.id),
+                                  onCopy: () => _run(
+                                    () => clipboardController.copy(clip),
+                                  ),
+                                  onToggleQueued: () => _runLocal(
+                                    () => store.toggleQueued(clip.id),
+                                  ),
+                                  onTogglePinned: () => _runLocal(
+                                    () => store.togglePinned(clip.id),
+                                  ),
+                                  onAction: (action) =>
+                                      _handleClipAction(clip, action),
+                                ),
+                          );
+                        },
                         childCount: clips.length * 2 - 1,
                         // Preserve row elements (including expansion/scroll
                         // state) when an item moves to a different sort index.
