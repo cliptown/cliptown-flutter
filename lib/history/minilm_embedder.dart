@@ -21,7 +21,7 @@ final class MiniLmOnDeviceEmbedder implements LocalTextEmbeddingModel {
   Future<LlamaEngine>? _loading;
 
   @override
-  String get modelId => localEmbeddingModel;
+  String get modelId => 'cliptown-minilm-l6-v2-q4-gguf-v1';
 
   @override
   Future<List<double>> embed(String text) async {
