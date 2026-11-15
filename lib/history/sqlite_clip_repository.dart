@@ -78,7 +78,8 @@ class SqliteClipRepository
       // External writes invalidate it; recover from the authoritative DB
       // inside the write transaction before planning changed rows.
       final version = _dataVersion(database);
-      final before = _persistence.forVersion(version) ??
+      final before =
+          _persistence.forVersion(version) ??
           <String, ClipItem>{
             for (final clip in _readClips(database)) clip.id: clip,
           };
@@ -90,11 +91,7 @@ class SqliteClipRepository
       );
       database.execute('COMMIT');
       // Publish the snapshot only after SQLite confirms the commit.
-      _persistence.recordSave(
-        plan.after,
-        _dataVersion(database),
-        stats,
-      );
+      _persistence.recordSave(plan.after, _dataVersion(database), stats);
     } on Object catch (error) {
       try {
         database.execute('ROLLBACK');
@@ -102,7 +99,10 @@ class SqliteClipRepository
         // Preserve the original write failure and fail the vault closed.
       }
       _persistence.invalidate();
-      throw ClipRepositoryException('encrypted SQLite vault write failed', error);
+      throw ClipRepositoryException(
+        'encrypted SQLite vault write failed',
+        error,
+      );
     }
   }
 
@@ -113,17 +113,19 @@ class SqliteClipRepository
     if (rows.length > _maxClipCount) {
       throw const ClipRepositoryException('SQLite clip count exceeds limit');
     }
-    return rows.map((row) {
-      final encoded = row['clip_json'];
-      if (encoded is! String || encoded.length > 16 * 1024 * 1024) {
-        throw const FormatException('SQLite clip row is invalid');
-      }
-      final decoded = jsonDecode(encoded);
-      if (decoded is! Map<Object?, Object?>) {
-        throw const FormatException('SQLite clip JSON is invalid');
-      }
-      return ClipItem.fromJson(decoded.cast<String, Object?>());
-    }).toList(growable: false);
+    return rows
+        .map((row) {
+          final encoded = row['clip_json'];
+          if (encoded is! String || encoded.length > 16 * 1024 * 1024) {
+            throw const FormatException('SQLite clip row is invalid');
+          }
+          final decoded = jsonDecode(encoded);
+          if (decoded is! Map<Object?, Object?>) {
+            throw const FormatException('SQLite clip JSON is invalid');
+          }
+          return ClipItem.fromJson(decoded.cast<String, Object?>());
+        })
+        .toList(growable: false);
   }
 
   int _dataVersion(Database database) =>
