@@ -24,7 +24,10 @@ void main() {
         expect(a, hasLength(384));
         // Long clipboard content must not exceed the encoder micro-batch.
         final longVector = await model.embed(
-          List<String>.filled(250, 'Athletic shoes and running gear.').join(' '),
+          List<String>.filled(
+            250,
+            'Athletic shoes and running gear.',
+          ).join(' '),
         );
         expect(longVector, hasLength(384));
         expect(
