@@ -103,6 +103,11 @@ final class MiniLmSemanticClipRepository
         ) STRICT
       ''');
       database.execute('''
+        CREATE INDEX IF NOT EXISTS idx_vectors_corrupt_embedding
+        ON vectors (clip_id)
+        WHERE embedding IS NOT NULL AND length(embedding) != 1536
+      ''');
+      database.execute('''
         CREATE TEMP TABLE IF NOT EXISTS _active_clip_ids (
           clip_id TEXT PRIMARY KEY
         )
@@ -139,12 +144,19 @@ final class MiniLmSemanticClipRepository
         }
       }
     }
-    // Pinning, reordering and mark-used saves must not rebuild a 100k-row
-    // SQLite index or cancel an in-flight embedding worker. Retry explicitly
-    // after an earlier offline model failure, however.
+    // Pinning and mark-used saves never rebuild a 100k-row SQLite index.
+    // A sparse partial index makes externally truncated blobs detectable
+    // without scanning every healthy vector on each save.
     if (!changed && !_needsRecovery) {
-      _startIndexing();
-      return;
+      final corrupt = _open().select(
+        'SELECT clip_id FROM vectors '
+        'WHERE embedding IS NOT NULL AND length(embedding) != 1536 '
+        'LIMIT 1',
+      );
+      if (corrupt.isEmpty) {
+        _startIndexing();
+        return;
+      }
     }
     final db = _open();
     db.execute('BEGIN IMMEDIATE');
