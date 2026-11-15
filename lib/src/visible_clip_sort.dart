@@ -20,7 +20,8 @@ List<ClipItem> buildVisibleClipSnapshot(
     if (collectionFilter != null && clip.collection != collectionFilter) {
       return false;
     }
-    final exact = normalized.isNotEmpty &&
+    final exact =
+        normalized.isNotEmpty &&
         normalizedSearchText(clip).contains(normalized);
     if (normalized.isNotEmpty && !exact && !semanticMatches(clip.id)) {
       return false;
