@@ -213,8 +213,8 @@ final class MiniLmSemanticClipRepository
   /// Test seam: await the current backfill without performing network I/O
   /// when a fake embedding model is injected.
   Future<void> waitForIndexing() async {
-    while (_indexing case final pending?) {
-      await pending;
+    while (_indexing != null) {
+      await _indexing;
     }
   }
 
