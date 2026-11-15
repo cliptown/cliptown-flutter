@@ -103,11 +103,7 @@ class ClipStore extends ChangeNotifier {
           final query = _query.trim();
           if (_vaultLocked || query.length < 2) return;
           if (_repository case final SemanticClipRepository semantic) {
-            unawaited(_loadSemanticMatches(
-              semantic,
-              query,
-              _queryGeneration,
-            ));
+            unawaited(_loadSemanticMatches(semantic, query, _queryGeneration));
           }
         });
       }
