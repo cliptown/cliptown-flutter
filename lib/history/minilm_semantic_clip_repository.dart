@@ -150,10 +150,6 @@ final class MiniLmSemanticClipRepository
         }
       }
       // Clips that cease to have text must not retain older text vectors.
-      db.execute('DELETE FROM vectors WHERE clip_id NOT IN '
-          '(SELECT clip_id FROM _active_clip_ids) OR clip_id NOT IN '
-          '(SELECT clip_id FROM vectors WHERE embedding IS NOT NULL '
-          'OR embedding IS NULL)');
       // The desired set is smaller than active IDs when images/files exist.
       for (final id in ids.difference(desired.keys.toSet())) {
         db.execute('DELETE FROM vectors WHERE clip_id = ?', <Object?>[id]);
