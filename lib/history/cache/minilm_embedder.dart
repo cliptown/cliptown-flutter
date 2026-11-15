@@ -22,9 +22,13 @@ abstract interface class DisposableLocalTextEmbeddingModel {
 /// never leaves the device. The verified model is cached in app support storage.
 final class MiniLmOnDeviceEmbedder
     implements LocalTextEmbeddingModel, DisposableLocalTextEmbeddingModel {
-  MiniLmOnDeviceEmbedder({required this.modelDirectory});
+  MiniLmOnDeviceEmbedder({
+    required this.modelDirectory,
+    this.onDownloadProgress,
+  });
 
   final Directory modelDirectory;
+  final void Function(int downloadedBytes, int? totalBytes)? onDownloadProgress;
   Future<LlamaEngine>? _loading;
   Future<void> _tail = Future<void>.value();
   bool _disposed = false;
@@ -99,7 +103,10 @@ final class MiniLmOnDeviceEmbedder
   }
 
   Future<LlamaEngine> _loadEngine() async {
-    final model = await ensureMiniLmModelFile(modelDirectory);
+    final model = await ensureMiniLmModelFile(
+      modelDirectory,
+      onDownloadProgress: onDownloadProgress,
+    );
     final engine = await LlamaEngine.load(
       LlamaModel(ModelSource.path(model.path)),
       params: const ModelParams(contextSize: 512, gpuLayers: 0),
@@ -122,7 +129,10 @@ const int _maxModelBytes = 32 * 1024 * 1024;
 
 /// Verifies cached weights on every startup and checks the download before
 /// atomic installation. Failed/interrupted downloads never become a model.
-Future<File> ensureMiniLmModelFile(Directory directory) async {
+Future<File> ensureMiniLmModelFile(
+  Directory directory, {
+  void Function(int downloadedBytes, int? totalBytes)? onDownloadProgress,
+}) async {
   await directory.create(recursive: true);
   final model = File(
     '${directory.path}${Platform.pathSeparator}$miniLmFilename',
@@ -140,6 +150,10 @@ Future<File> ensureMiniLmModelFile(Directory directory) async {
         response.contentLength > _maxModelBytes) {
       throw const FileSystemException('MiniLM model download failed');
     }
+    final expected = response.contentLength > 0
+        ? response.contentLength
+        : null;
+    onDownloadProgress?.call(0, expected);
     final sink = partial.openWrite();
     var written = 0;
     try {
@@ -153,6 +167,7 @@ Future<File> ensureMiniLmModelFile(Directory directory) async {
           throw const FileSystemException('MiniLM model exceeds size limit');
         }
         sink.add(bytes);
+        onDownloadProgress?.call(written, expected);
       }
       await sink.flush();
     } finally {

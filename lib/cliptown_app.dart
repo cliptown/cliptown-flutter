@@ -854,21 +854,33 @@ class _ClipTownHomeState extends State<ClipTownHome> {
   }
 
   Widget _buildSearch() {
+    final progress = store.semanticIndexProgress;
     return TextField(
       key: const Key('clip-search'),
       controller: _searchController,
       focusNode: _searchFocus,
       autofocus: desktopShell != null,
       onChanged: _onQueryChanged,
-      decoration: const InputDecoration(
-        prefixIcon: Tooltip(
+      decoration: InputDecoration(
+        prefixIcon: const Tooltip(
           message:
               'Searches text, titles, tags, collections, source apps and '
               'related meaning. Esc clears.',
           child: Icon(Icons.search),
         ),
         labelText: 'Search content, related text, tags, collections, and apps',
-        helperText: '↑ ↓ to select • Return copies • Esc clears or hides',
+        helperMaxLines: 2,
+        helperText: progress == null
+            ? '↑ ↓ to select • Return copies • Esc clears or hides'
+            : '${progress.label} • ↑ ↓ selects • Return copies • Esc clears',
+        suffixIcon: progress?.canRetry == true
+            ? IconButton(
+                key: const Key('retry-local-semantic-search'),
+                icon: const Icon(Icons.refresh),
+                tooltip: 'Retry local semantic search indexing',
+                onPressed: () => unawaited(store.retrySemanticIndex()),
+              )
+            : null,
       ),
     );
   }

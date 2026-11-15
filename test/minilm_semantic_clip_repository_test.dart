@@ -309,6 +309,36 @@ void main() {
     },
   );
 
+  test('index status reflects failure, retry and completed backfill', () async {
+    final model = _TransientFailureEmbedder();
+    final repo = newRepository(embedder: model);
+    final states = <SemanticIndexProgress>[];
+    final subscription = repo.indexProgressUpdates.listen(states.add);
+    await repo.load();
+    await repo.waitForIndexing();
+    expect(repo.indexProgress.phase, SemanticIndexPhase.unavailable);
+
+    await repo.retrySemanticIndex();
+    await repo.waitForIndexing();
+    expect(repo.indexProgress.phase, SemanticIndexPhase.ready);
+    expect(repo.indexProgress.indexed, 2);
+    expect(repo.indexProgress.total, 2);
+    expect(states.any((s) => s.phase == SemanticIndexPhase.indexing), isTrue);
+    await subscription.cancel();
+    await repo.clear();
+  });
+
+  test('reports model-download percentage without clip plaintext', () async {
+    final repo = newRepository();
+    repo.reportModelDownloadProgress(1024, 2048);
+    expect(repo.indexProgress.phase, SemanticIndexPhase.downloading);
+    expect(repo.indexProgress.downloadPercent, 50);
+    expect(repo.indexProgress.label, contains('50%'));
+    await repo.load();
+    await repo.waitForIndexing();
+    await repo.clear();
+  });
+
   test('vector codec still accepts exactly 384 floats', () {
     final fake = List<double>.filled(localEmbeddingDimensions, 0)..[0] = 1;
     expect(decodeLocalEmbedding(encodeLocalEmbedding(fake)), fake);

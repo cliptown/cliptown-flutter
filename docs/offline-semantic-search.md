@@ -92,3 +92,12 @@ CLIPTOWN_RUN_MINILM_LIVE_TEST=1 flutter test test/minilm_real_embedding_test.dar
 ```
 
 The live test downloads the published verified 21 MB model on first use.
+
+## First-run search status
+
+The desktop search bar now exposes local semantic-index readiness alongside
+the existing keyboard shortcut guidance. During first-run setup, it displays
+model download percentage (when the server provides a content length), then
+incremental indexed/total clip counts. Failed model loads preserve lexical
+search and show a retry control. No clipboard text is included in progress
+events or sent to the model host.

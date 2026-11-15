@@ -42,6 +42,8 @@ class ClipStore extends ChangeNotifier {
         },
       );
   Future<void> _operationTail = Future<void>.value();
+  StreamSubscription<SemanticIndexProgress>? _semanticProgressSubscription;
+  SemanticIndexProgress? _semanticIndexProgress;
   CapturePolicy _policy;
   String _query = '';
   bool _pinnedOnly = false;
@@ -61,6 +63,7 @@ class ClipStore extends ChangeNotifier {
   ClipKind? get kindFilter => _kindFilter;
   String? get collectionFilter => _collectionFilter;
   String? get statusMessage => _statusMessage;
+  SemanticIndexProgress? get semanticIndexProgress => _semanticIndexProgress;
   CapturePolicy get policy => _policy;
   List<ClipItem> get clips => List<ClipItem>.unmodifiable(_clips);
   List<String> get queuedIds => List<String>.unmodifiable(_queuedIds);
@@ -112,6 +115,15 @@ class ClipStore extends ChangeNotifier {
       _vaultLocked = false;
       _statusMessage = null;
       _semanticSearch.activate();
+      if (_repository case final SemanticIndexProgressSource progress) {
+        _semanticIndexProgress = progress.indexProgress;
+        _semanticProgressSubscription = progress.indexProgressUpdates.listen(
+          (next) {
+            _semanticIndexProgress = next;
+            notifyListeners();
+          },
+        );
+      }
     } on Object {
       _clips.clear();
       _queuedIds.clear();
@@ -123,6 +135,12 @@ class ClipStore extends ChangeNotifier {
     _invalidateVisibleClips();
     notifyListeners();
   });
+
+  Future<void> retrySemanticIndex() async {
+    if (_repository case final SemanticIndexProgressSource provider) {
+      await provider.retrySemanticIndex();
+    }
+  }
 
   void setQuery(String value) {
     if (_query == value) return;
@@ -569,6 +587,7 @@ class ClipStore extends ChangeNotifier {
   @override
   void dispose() {
     _semanticSearch.dispose();
+    unawaited(_semanticProgressSubscription?.cancel());
     if (_repository case final ClosableClipRepository closable) {
       unawaited(closable.close());
     }

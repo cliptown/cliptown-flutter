@@ -22,6 +22,7 @@ final class MiniLmSemanticClipRepository
         ClipRepository,
         SemanticClipRepository,
         SemanticClipRepositoryUpdates,
+        SemanticIndexProgressSource,
         ClosableClipRepository {
   MiniLmSemanticClipRepository({
     required this.history,
@@ -36,6 +37,15 @@ final class MiniLmSemanticClipRepository
   final LinkedHashMap<String, (String, String)> _pending =
       LinkedHashMap<String, (String, String)>();
   final StreamController<void> _changes = StreamController<void>.broadcast();
+  final StreamController<SemanticIndexProgress> _progressChanges =
+      StreamController<SemanticIndexProgress>.broadcast();
+  SemanticIndexProgress _progress = const SemanticIndexProgress(
+    phase: SemanticIndexPhase.preparing,
+    indexed: 0,
+    total: 0,
+  );
+  int _totalVectors = 0;
+  int _indexedVectors = 0;
   // Reuse query embeddings while the backfill changes index revisions.
   // Bounded LRU: query text must not grow indefinitely in process memory.
   final LinkedHashMap<String, Future<List<double>>> _queryEmbeddings =
@@ -53,6 +63,49 @@ final class MiniLmSemanticClipRepository
   /// progresses, instead of requiring the user to retype it.
   @override
   Stream<void> get indexUpdates => _changes.stream;
+
+  @override
+  SemanticIndexProgress get indexProgress => _progress;
+
+  @override
+  Stream<SemanticIndexProgress> get indexProgressUpdates =>
+      _progressChanges.stream;
+
+  void _publishProgress(SemanticIndexProgress next) {
+    final current = _progress;
+    if (current.phase == next.phase &&
+        current.indexed == next.indexed &&
+        current.total == next.total &&
+        current.downloadPercent == next.downloadPercent) {
+      return;
+    }
+    _progress = next;
+    if (!_progressChanges.isClosed) _progressChanges.add(next);
+  }
+
+  void _reportIndexProgress() {
+    _publishProgress(SemanticIndexProgress(
+      phase: _indexedVectors >= _totalVectors
+          ? SemanticIndexPhase.ready
+          : SemanticIndexPhase.indexing,
+      indexed: _indexedVectors,
+      total: _totalVectors,
+    ));
+  }
+
+  /// Called only by the local native model's weight download callback.
+  void reportModelDownloadProgress(int bytes, int? expectedBytes) {
+    if (!_indexAvailable || _closing != null) return;
+    final percent = expectedBytes != null && expectedBytes > 0
+        ? (100 * bytes ~/ expectedBytes).clamp(0, 100).toInt()
+        : null;
+    _publishProgress(SemanticIndexProgress(
+      phase: SemanticIndexPhase.downloading,
+      indexed: _indexedVectors,
+      total: _totalVectors,
+      downloadPercent: percent,
+    ));
+  }
 
   @override
   Future<List<ClipItem>> load() async {
@@ -80,6 +133,11 @@ final class MiniLmSemanticClipRepository
       _hasIndexedSnapshot = false;
       _database?.close();
       _database = null;
+      _publishProgress(SemanticIndexProgress(
+        phase: SemanticIndexPhase.unavailable,
+        indexed: _indexedVectors,
+        total: _totalVectors,
+      ));
     }
   }
 
@@ -170,6 +228,9 @@ final class MiniLmSemanticClipRepository
     _lastDesired = desired;
     _hasIndexedSnapshot = true;
     _needsRecovery = false;
+    _totalVectors = desired.length;
+    _indexedVectors = desired.length - _pending.length;
+    _reportIndexProgress();
     // Invalidate query and indexing work started against an older clip set.
     _generation += 1;
     _startIndexing();
@@ -269,16 +330,30 @@ final class MiniLmSemanticClipRepository
           ],
         );
         indexed += 1;
+        _indexedVectors += 1;
+        if (indexed % 8 == 0 || _pending.isEmpty) _reportIndexProgress();
         if (indexed % 8 == 0 && !_changes.isClosed) _changes.add(null);
       } on Object {
         // Model unavailable/offline: leave rows pending for restart or the
         // next mutation. Never replace semantic results with hash embeddings.
         _needsRecovery = true;
         _pending.clear();
+        _publishProgress(SemanticIndexProgress(
+          phase: SemanticIndexPhase.unavailable,
+          indexed: _indexedVectors,
+          total: _totalVectors,
+        ));
         break;
       }
     }
     if (indexed > 0 && !_changes.isClosed) _changes.add(null);
+  }
+
+  @override
+  Future<void> retrySemanticIndex() async {
+    if (!_indexAvailable || _closing != null) return;
+    _needsRecovery = true;
+    _tryReconcile(await history.load());
   }
 
   /// Test seam: await the current backfill without performing network I/O
@@ -418,6 +493,7 @@ final class MiniLmSemanticClipRepository
     _database?.close();
     _database = null;
     await _changes.close();
+    await _progressChanges.close();
     if (model case final DisposableLocalTextEmbeddingModel disposable) {
       await disposable.dispose();
     }
@@ -447,6 +523,9 @@ final class MiniLmSemanticClipRepository
       final file = File('$indexPath$suffix');
       if (await file.exists()) await file.delete();
     }
+    _totalVectors = 0;
+    _indexedVectors = 0;
+    _reportIndexProgress();
     if (!_changes.isClosed) _changes.add(null);
   }
 }
@@ -456,16 +535,21 @@ Future<MiniLmSemanticClipRepository> createPlatformMiniLmRepository(
 ) async {
   final support = await getApplicationSupportDirectory();
   final root = Directory('${support.path}${Platform.pathSeparator}ClipTown');
-  return MiniLmSemanticClipRepository(
+  late final MiniLmSemanticClipRepository repository;
+  final embedder = MiniLmOnDeviceEmbedder(
+    modelDirectory: Directory(
+      '${root.path}${Platform.pathSeparator}models'
+      '${Platform.pathSeparator}minilm-l6-v2-q4',
+    ),
+    onDownloadProgress: (bytes, expected) =>
+        repository.reportModelDownloadProgress(bytes, expected),
+  );
+  repository = MiniLmSemanticClipRepository(
     history: history,
     indexPath: '${root.path}${Platform.pathSeparator}semantic-minilm-v1.db',
-    model: MiniLmOnDeviceEmbedder(
-      modelDirectory: Directory(
-        '${root.path}${Platform.pathSeparator}models'
-        '${Platform.pathSeparator}minilm-l6-v2-q4',
-      ),
-    ),
+    model: embedder,
   );
+  return repository;
 }
 
 final class SqliteMiniLmSearchResult {
