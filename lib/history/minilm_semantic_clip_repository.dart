@@ -17,7 +17,10 @@ import 'minilm_embedder.dart';
 /// remain owned by [history]. Only clip IDs, SHA-256s and vectors are stored
 /// here; deleting history also erases the derived index.
 final class MiniLmSemanticClipRepository
-    implements ClipRepository, SemanticClipRepository, SemanticClipRepositoryUpdates {
+    implements
+        ClipRepository,
+        SemanticClipRepository,
+        SemanticClipRepositoryUpdates {
   MiniLmSemanticClipRepository({
     required this.history,
     required this.indexPath,
@@ -108,13 +111,18 @@ final class MiniLmSemanticClipRepository
       ids.add(clip.id);
       if (clip.text case final text?) {
         if (text.trim().isNotEmpty) {
-          desired[clip.id] = (text, sha256.convert(utf8.encode(text)).toString());
+          desired[clip.id] = (
+            text,
+            sha256.convert(utf8.encode(text)).toString(),
+          );
         }
       }
     }
 
     db.execute('BEGIN IMMEDIATE');
-    final active = db.prepare('INSERT INTO _active_clip_ids (clip_id) VALUES (?)');
+    final active = db.prepare(
+      'INSERT INTO _active_clip_ids (clip_id) VALUES (?)',
+    );
     final upsert = db.prepare('''
       INSERT INTO vectors (
         clip_id, source_hash, model_id, dimensions, embedding, indexed_at
@@ -137,8 +145,10 @@ final class MiniLmSemanticClipRepository
       for (final id in ids) {
         active.execute(<Object?>[id]);
       }
-      db.execute('DELETE FROM vectors WHERE clip_id NOT IN '
-          '(SELECT clip_id FROM _active_clip_ids)');
+      db.execute(
+        'DELETE FROM vectors WHERE clip_id NOT IN '
+        '(SELECT clip_id FROM _active_clip_ids)',
+      );
       _pending.clear();
       for (final entry in desired.entries) {
         upsert.execute(<Object?>[
@@ -172,10 +182,12 @@ final class MiniLmSemanticClipRepository
     if (_indexing != null || _pending.isEmpty || !_indexAvailable) return;
     final work = _drain();
     _indexing = work;
-    unawaited(work.whenComplete(() {
-      _indexing = null;
-      if (_pending.isNotEmpty) _startIndexing();
-    }));
+    unawaited(
+      work.whenComplete(() {
+        _indexing = null;
+        if (_pending.isNotEmpty) _startIndexing();
+      }),
+    );
   }
 
   Future<void> _drain() async {
@@ -187,17 +199,20 @@ final class MiniLmSemanticClipRepository
       try {
         final embedding = await model.embed(entry.value.$1);
         if (generation != _generation || !_indexAvailable) break;
-        _database?.execute('''
+        _database?.execute(
+          '''
           UPDATE vectors SET embedding = ?, indexed_at = ?
           WHERE clip_id = ? AND source_hash = ?
             AND model_id = ? AND embedding IS NULL
-        ''', <Object?>[
-          encodeLocalEmbedding(embedding),
-          DateTime.now().toUtc().toIso8601String(),
-          entry.key,
-          entry.value.$2,
-          model.modelId,
-        ]);
+        ''',
+          <Object?>[
+            encodeLocalEmbedding(embedding),
+            DateTime.now().toUtc().toIso8601String(),
+            entry.key,
+            entry.value.$2,
+            model.modelId,
+          ],
+        );
         indexed += 1;
         if (indexed % 8 == 0 && !_changes.isClosed) _changes.add(null);
       } on Object {
@@ -237,13 +252,15 @@ final class MiniLmSemanticClipRepository
     final matches = <SqliteMiniLmSearchResult>[];
     for (final row in rows) {
       try {
-        matches.add(SqliteMiniLmSearchResult(
-          clipId: row['clip_id'] as String,
-          distance: localEmbeddingCosineDistance(
-            queryVector,
-            decodeLocalEmbedding(row['embedding'] as Uint8List),
+        matches.add(
+          SqliteMiniLmSearchResult(
+            clipId: row['clip_id'] as String,
+            distance: localEmbeddingCosineDistance(
+              queryVector,
+              decodeLocalEmbedding(row['embedding'] as Uint8List),
+            ),
           ),
-        ));
+        );
       } on FormatException {
         // A damaged derived vector never blocks the encrypted history.
       }
@@ -275,9 +292,13 @@ final class MiniLmSemanticClipRepository
     await _changes.close();
   }
 
-  Future<int> embeddingCount() async => (_open().select(
-    'SELECT count(*) AS count FROM vectors WHERE embedding IS NOT NULL',
-  ).single['count'] as int);
+  Future<int> embeddingCount() async =>
+      (_open()
+              .select(
+                'SELECT count(*) AS count FROM vectors WHERE embedding IS NOT NULL',
+              )
+              .single['count']
+          as int);
 
   @override
   Future<void> clear() async {
@@ -298,9 +319,7 @@ Future<MiniLmSemanticClipRepository> createPlatformMiniLmRepository(
   ClipRepository history,
 ) async {
   final support = await getApplicationSupportDirectory();
-  final root = Directory(
-    '${support.path}${Platform.pathSeparator}ClipTown',
-  );
+  final root = Directory('${support.path}${Platform.pathSeparator}ClipTown');
   return MiniLmSemanticClipRepository(
     history: history,
     indexPath: '${root.path}${Platform.pathSeparator}semantic-minilm-v1.db',
