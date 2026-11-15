@@ -20,7 +20,8 @@ final class MiniLmSemanticClipRepository
     implements
         ClipRepository,
         SemanticClipRepository,
-        SemanticClipRepositoryUpdates {
+        SemanticClipRepositoryUpdates,
+        ClosableClipRepository {
   MiniLmSemanticClipRepository({
     required this.history,
     required this.indexPath,
@@ -284,13 +285,18 @@ final class MiniLmSemanticClipRepository
   }
 
   /// Close native SQLite resources without erasing the persisted index.
+  @override
   Future<void> close() async {
+    _indexAvailable = false;
     _generation += 1;
     _pending.clear();
     await _indexing;
     _database?.close();
     _database = null;
     await _changes.close();
+    if (model case final DisposableLocalTextEmbeddingModel disposable) {
+      await disposable.dispose();
+    }
   }
 
   Future<int> embeddingCount() async =>
