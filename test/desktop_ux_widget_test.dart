@@ -711,6 +711,11 @@ void main() {
 
     final search = find.byKey(const Key('clip-search'));
     expect(search, findsOneWidget, reason: 'still mounted while scrolled');
+    expect(
+      find.byKey(const Key('app-headline')).hitTestable(),
+      findsOneWidget,
+      reason: 'headline stays pinned at the top',
+    );
     final node = tester.widget<TextField>(search).focusNode!;
     node.unfocus();
     await tester.pump();
