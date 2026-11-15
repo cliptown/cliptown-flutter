@@ -22,9 +22,7 @@ final class BoundedVectorSearch {
 
   static bool _isWorse(ClipVectorMatch a, ClipVectorMatch b) {
     final comparison = a.distance.compareTo(b.distance);
-    return comparison != 0
-        ? comparison > 0
-        : a.clipId.compareTo(b.clipId) > 0;
+    return comparison != 0 ? comparison > 0 : a.clipId.compareTo(b.clipId) > 0;
   }
 
   void offer(String clipId, double distance) {
@@ -43,9 +41,7 @@ final class BoundedVectorSearch {
     final matches = List<ClipVectorMatch>.of(_heap);
     matches.sort((a, b) {
       final comparison = a.distance.compareTo(b.distance);
-      return comparison != 0
-          ? comparison
-          : a.clipId.compareTo(b.clipId);
+      return comparison != 0 ? comparison : a.clipId.compareTo(b.clipId);
     });
     return matches;
   }
@@ -103,8 +99,7 @@ double? encodedCosineDistance(
   if (query.length != localEmbeddingDimensions ||
       !queryMagnitude.isFinite ||
       queryMagnitude <= 0 ||
-      bytes.length !=
-          localEmbeddingDimensions * Float32List.bytesPerElement) {
+      bytes.length != localEmbeddingDimensions * Float32List.bytesPerElement) {
     return null;
   }
   final values = ByteData.sublistView(bytes);
