@@ -26,10 +26,11 @@ class ClipStore extends ChangeNotifier {
   final DateTime Function() _clock;
   final List<ClipItem> _clips = <ClipItem>[];
   final List<String> _queuedIds = <String>[];
-  late final SemanticSearchController _semanticSearch = SemanticSearchController(
-    repository: _repository,
-    onChanged: notifyListeners,
-  );
+  late final SemanticSearchController _semanticSearch =
+      SemanticSearchController(
+        repository: _repository,
+        onChanged: notifyListeners,
+      );
   Future<void> _operationTail = Future<void>.value();
   CapturePolicy _policy;
   String _query = '';
