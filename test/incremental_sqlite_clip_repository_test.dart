@@ -249,12 +249,15 @@ void main() {
       expect(plan.inserted, isEmpty);
       expect(plan.updated.map((clip) => clip.id), <String>['deploy-command']);
       expect(plan.deletedIds, <String>['design-reference']);
-    expect(before.keys, contains('design-reference'),
-        reason: 'planning cannot change a pre-commit snapshot');
-    final committed = plan.applyCommitted();
-    expect(identical(committed, before), isTrue);
-    expect(committed.keys, isNot(contains('design-reference')));
-    expect(committed['deploy-command']!.collection, 'New group');
+      expect(
+        before.keys,
+        contains('design-reference'),
+        reason: 'planning cannot change a pre-commit snapshot',
+      );
+      final committed = plan.applyCommitted();
+      expect(identical(committed, before), isTrue);
+      expect(committed.keys, isNot(contains('design-reference')));
+      expect(committed['deploy-command']!.collection, 'New group');
     },
   );
 }
