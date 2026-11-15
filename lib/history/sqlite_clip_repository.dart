@@ -6,6 +6,9 @@ import 'package:cryptography/cryptography.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:sqlite3/sqlite3.dart';
 
+import 'cache/clip_persistence_state.dart';
+import 'cache/clip_sqlite_writer.dart';
+import 'cache/clip_write_plan.dart';
 import 'clip_item.dart';
 import 'clip_repository.dart';
 import 'encrypted_clip_repository.dart';
@@ -37,33 +40,24 @@ class SqliteClipRepository implements ClipRepository, SemanticClipRepository {
   final Cipher _keyGenerator;
   final bool generateLegacyEmbeddings;
   Database? _database;
+  final ClipPersistenceState _persistence = ClipPersistenceState();
+
+  /// Metadata from the last successfully committed transaction; useful for
+  /// tests and benchmark baselines without inspecting plaintext rows.
+  ClipWriteStats lastWriteStats() => _persistence.lastStats();
 
   @override
   Future<List<ClipItem>> load() async {
     final database = await _open();
     try {
-      final rows = database.select(
-        'SELECT clip_json FROM clips ORDER BY sort_timestamp DESC, clip_id',
-      );
-      if (rows.length > _maxClipCount) {
-        throw const ClipRepositoryException('SQLite clip count exceeds limit');
-      }
-      return rows
-          .map((row) {
-            final encoded = row['clip_json'];
-            if (encoded is! String || encoded.length > 16 * 1024 * 1024) {
-              throw const FormatException('SQLite clip row is invalid');
-            }
-            final decoded = jsonDecode(encoded);
-            if (decoded is! Map<Object?, Object?>) {
-              throw const FormatException('SQLite clip JSON is invalid');
-            }
-            return ClipItem.fromJson(decoded.cast<String, Object?>());
-          })
-          .toList(growable: false);
+      final clips = _readClips(database);
+      _persistence.recordLoad(clips, _dataVersion(database));
+      return clips;
     } on ClipRepositoryException {
+      _persistence.invalidate();
       rethrow;
     } on Object catch (error) {
+      _persistence.invalidate();
       throw ClipRepositoryException(
         'encrypted SQLite vault read failed',
         error,
@@ -79,60 +73,60 @@ class SqliteClipRepository implements ClipRepository, SemanticClipRepository {
     final database = await _open();
     try {
       database.execute('BEGIN IMMEDIATE');
-      database.execute('DELETE FROM clip_embeddings');
-      database.execute('DELETE FROM clips');
-      final clipStatement = database.prepare('''
-        INSERT INTO clips (
-          clip_id, kind, title, search_text, clip_json, sort_timestamp, pinned
-        ) VALUES (?, ?, ?, ?, ?, ?, ?)
-      ''');
-      final embeddingStatement = database.prepare('''
-        INSERT INTO clip_embeddings (
-          clip_id, model_id, dimensions, embedding, created_at
-        ) VALUES (?, ?, ?, ?, ?)
-      ''');
-      try {
-        for (final clip in clips) {
-          clip.validate();
-          final searchText = clip.searchableText;
-          clipStatement.execute(<Object?>[
-            clip.id,
-            clip.kind.name,
-            clip.title,
-            searchText,
-            jsonEncode(clip.toJson()),
-            clip.sortTimestamp.toUtc().toIso8601String(),
-            clip.pinned ? 1 : 0,
-          ]);
-          if (generateLegacyEmbeddings &&
-              clip.text != null &&
-              clip.text!.trim().isNotEmpty) {
-            embeddingStatement.execute(<Object?>[
-              clip.id,
-              localEmbeddingModel,
-              localEmbeddingDimensions,
-              encodeLocalEmbedding(createLocalEmbedding(clip.text!)),
-              DateTime.now().toUtc().toIso8601String(),
-            ]);
-          }
-        }
-      } finally {
-        clipStatement.close();
-        embeddingStatement.close();
-      }
+      // The snapshot is valid only for this connection's data_version.
+      // External writes invalidate it; recover from the authoritative DB
+      // inside the write transaction before planning changed rows.
+      final version = _dataVersion(database);
+      final before = _persistence.forVersion(version) ??
+          <String, ClipItem>{
+            for (final clip in _readClips(database)) clip.id: clip,
+          };
+      final plan = planClipWrites(before, clips);
+      final stats = applyClipWritePlan(
+        database,
+        plan,
+        generateLegacyEmbeddings: generateLegacyEmbeddings,
+      );
       database.execute('COMMIT');
+      // Publish the snapshot only after SQLite confirms the commit.
+      _persistence.recordSave(
+        plan.after,
+        _dataVersion(database),
+        stats,
+      );
     } on Object catch (error) {
       try {
         database.execute('ROLLBACK');
       } on Object {
-        // Preserve the original failure and fail the vault closed.
+        // Preserve the original write failure and fail the vault closed.
       }
-      throw ClipRepositoryException(
-        'encrypted SQLite vault write failed',
-        error,
-      );
+      _persistence.invalidate();
+      throw ClipRepositoryException('encrypted SQLite vault write failed', error);
     }
   }
+
+  List<ClipItem> _readClips(Database database) {
+    final rows = database.select(
+      'SELECT clip_json FROM clips ORDER BY sort_timestamp DESC, clip_id',
+    );
+    if (rows.length > _maxClipCount) {
+      throw const ClipRepositoryException('SQLite clip count exceeds limit');
+    }
+    return rows.map((row) {
+      final encoded = row['clip_json'];
+      if (encoded is! String || encoded.length > 16 * 1024 * 1024) {
+        throw const FormatException('SQLite clip row is invalid');
+      }
+      final decoded = jsonDecode(encoded);
+      if (decoded is! Map<Object?, Object?>) {
+        throw const FormatException('SQLite clip JSON is invalid');
+      }
+      return ClipItem.fromJson(decoded.cast<String, Object?>());
+    }).toList(growable: false);
+  }
+
+  int _dataVersion(Database database) =>
+      database.select('PRAGMA data_version').single['data_version'] as int;
 
   Future<List<SqliteVectorSearchResult>> vectorSearch(
     String query, {
@@ -189,6 +183,7 @@ class SqliteClipRepository implements ClipRepository, SemanticClipRepository {
   Future<void> clear() async {
     final database = _database;
     _database = null;
+    _persistence.invalidate();
     database?.close();
     try {
       for (final suffix in <String>['', '-wal', '-shm']) {
