@@ -27,7 +27,8 @@ class SqliteVectorSearchResult {
   final double distance;
 }
 
-class SqliteClipRepository implements ClipRepository, SemanticClipRepository {
+class SqliteClipRepository
+    implements ClipRepository, SemanticClipRepository, ClosableClipRepository {
   SqliteClipRepository({
     required this.path,
     required this.secretStore,
@@ -177,6 +178,14 @@ class SqliteClipRepository implements ClipRepository, SemanticClipRepository {
       'SELECT count(*) AS count FROM clip_embeddings',
     );
     return rows.single['count'] as int;
+  }
+
+  @override
+  Future<void> close() async {
+    final database = _database;
+    _database = null;
+    _persistence.invalidate();
+    database?.close();
   }
 
   @override
