@@ -176,9 +176,14 @@ void main() {
     final clips = demoClipItems();
     await repository.save(clips);
     final db = _openEncrypted(path, secrets);
+    final external = clips.first.copyWith(title: 'external title');
     db.execute(
-      "UPDATE clips SET title = 'external title' "
-      "WHERE clip_id = 'deploy-command'",
+      'UPDATE clips SET title = ?, clip_json = ? WHERE clip_id = ?',
+      <Object?>[
+        external.title,
+        jsonEncode(external.toJson()),
+        external.id,
+      ],
     );
     db.close();
 
