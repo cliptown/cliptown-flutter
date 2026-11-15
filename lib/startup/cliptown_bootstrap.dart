@@ -13,6 +13,7 @@ import '../history/clip_item.dart';
 import '../history/clip_repository.dart';
 import '../history/text_dedupe_worker.dart';
 import '../history/sqlite_clip_repository.dart';
+import '../history/minilm_semantic_clip_repository.dart';
 import '../src/clip_store.dart';
 import '../state/app_state_machine.dart';
 
@@ -59,9 +60,15 @@ final class ClipTownStartupResources {
 Future<ClipTownStartupResources> bootstrapClipTownRuntime({
   List<String> arguments = const <String>[],
 }) async {
+  final isDesktop = Platform.isMacOS || Platform.isWindows || Platform.isLinux;
   ClipRepository repository;
   try {
-    repository = await createPlatformSqliteClipRepository();
+    repository = await createPlatformSqliteClipRepository(
+      generateLegacyEmbeddings: !isDesktop,
+    );
+    if (isDesktop) {
+      repository = await createPlatformMiniLmRepository(repository);
+    }
   } on Object {
     repository = const _UnavailableClipRepository();
   }
@@ -73,8 +80,6 @@ Future<ClipTownStartupResources> bootstrapClipTownRuntime({
   try {
     await store.initialize();
 
-    final isDesktop =
-        Platform.isMacOS || Platform.isWindows || Platform.isLinux;
     final runtime = isDesktop ? AppRuntimeKind.desktop : AppRuntimeKind.mobile;
     stateMachine = store.vaultLocked
         ? AppStateMachine.vaultUnavailable(runtime)
