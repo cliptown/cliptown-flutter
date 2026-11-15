@@ -105,7 +105,7 @@ final class MiniLmSemanticClipRepository
 
   void _reconcile(List<ClipItem> clips) {
     final db = _open();
-    final desired = LinkedHashMap<String, (String, String)>();
+    final desired = <String, (String, String)>{};
     final ids = <String>{};
     for (final clip in clips) {
       ids.add(clip.id);
