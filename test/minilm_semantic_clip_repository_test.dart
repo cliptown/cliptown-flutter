@@ -133,20 +133,25 @@ void main() {
     await repo.clear();
   });
 
-  test('transient embedding failure can recover on next history save', () async {
-    final model = _TransientFailureEmbedder();
-    final repo = newRepository(embedder: model);
-    final clips = await repo.load();
-    await repo.waitForIndexing();
-    expect(await repo.embeddingCount(), 0);
+  test(
+    'transient embedding failure can recover on next history save',
+    () async {
+      final model = _TransientFailureEmbedder();
+      final repo = newRepository(embedder: model);
+      final clips = await repo.load();
+      await repo.waitForIndexing();
+      expect(await repo.embeddingCount(), 0);
 
-    await repo.save(clips);
-    await repo.waitForIndexing();
-    expect(await repo.embeddingCount(), 2);
-    expect(await repo.semanticSearchIds('software rollout release'),
-        contains('deploy-command'));
-    await repo.clear();
-  });
+      await repo.save(clips);
+      await repo.waitForIndexing();
+      expect(await repo.embeddingCount(), 2);
+        expect(
+          await repo.semanticSearchIds('software rollout release'),
+          contains('deploy-command'),
+        );
+        await repo.clear();
+    },
+  );
 
   test('reconciles a truncated vector without rewriting the clip', () async {
     final model = _FakeMeaningEmbedder();
@@ -163,8 +168,10 @@ void main() {
     await repo.waitForIndexing();
     expect(await repo.embeddingCount(), 2);
     expect(model.calls, 3);
-    expect(await repo.semanticSearchIds('software rollout release'),
-        contains('deploy-command'));
+    expect(
+      await repo.semanticSearchIds('software rollout release'),
+      contains('deploy-command'),
+    );
     await repo.clear();
   });
 
@@ -188,17 +195,17 @@ void main() {
   test(
     'vault clear racing with an outstanding query cannot revive results',
     () async {
-    final model = _BlockedQueryEmbedder();
-    final repo = newRepository(embedder: model);
-    await repo.load();
-    await repo.waitForIndexing();
-    final search = repo.semanticSearchIds('software rollout release');
-    await model.queryStarted.future;
+      final model = _BlockedQueryEmbedder();
+      final repo = newRepository(embedder: model);
+      await repo.load();
+      await repo.waitForIndexing();
+      final search = repo.semanticSearchIds('software rollout release');
+      await model.queryStarted.future;
 
-    await repo.clear();
-    model.releaseQuery();
-    expect(await search, isEmpty);
-    expect(await File(indexPath).exists(), isFalse);
+      await repo.clear();
+      model.releaseQuery();
+      expect(await search, isEmpty);
+      expect(await File(indexPath).exists(), isFalse);
     },
   );
 
