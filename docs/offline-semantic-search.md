@@ -32,7 +32,8 @@ normalized dimensions. On first use, ClipTown fetches **model weights only**
 over HTTPS, limits the download to 32 MiB, verifies their pinned SHA-256, and
 atomically installs the verified file. After that it works offline. An offline
 first launch or failed model check leaves lexical search available. Failed
-model loading can retry on a subsequent search or history modification;
+model loading can retry on a subsequent search or history modification,
+and a successful query can resume an unfinished document backfill;
 interrupted downloads are bounded and partial weights are discarded.
 
 The model identity is distinct from the historical `cliptown-fnv1a-v1`

@@ -185,8 +185,9 @@ void main() {
     await repo.clear();
   });
 
-  test('vault clear racing with an outstanding query cannot revive results',
-      () async {
+  test(
+    'vault clear racing with an outstanding query cannot revive results',
+    () async {
     final model = _BlockedQueryEmbedder();
     final repo = newRepository(embedder: model);
     await repo.load();
@@ -198,7 +199,47 @@ void main() {
     model.releaseQuery();
     expect(await search, isEmpty);
     expect(await File(indexPath).exists(), isFalse);
-  });
+    },
+  );
+
+  test(
+    'query recovers an offline-first model load without a history edit',
+    () async {
+      final model = _TransientFailureEmbedder();
+      final repo = newRepository(embedder: model);
+      await repo.load();
+      await repo.waitForIndexing();
+      expect(await repo.embeddingCount(), 0);
+
+      expect(await repo.semanticSearchIds('software rollout release'), isEmpty);
+      await repo.waitForIndexing();
+      expect(await repo.embeddingCount(), 2);
+      expect(
+        await repo.semanticSearchIds('software rollout release'),
+        contains('deploy-command'),
+      );
+      await repo.clear();
+    },
+  );
+
+  test(
+    'replacing history invalidates an in-flight semantic query',
+    () async {
+      final model = _BlockedQueryEmbedder();
+      final repo = newRepository(embedder: model);
+      final clips = await repo.load();
+      await repo.waitForIndexing();
+      final search = repo.semanticSearchIds('software rollout release');
+      await model.queryStarted.future;
+
+      await repo.save(
+        clips.where((clip) => clip.id == 'security-notes').toList(),
+      );
+      model.releaseQuery();
+      expect(await search, isEmpty);
+      await repo.clear();
+    },
+  );
 
   test('vector codec still accepts exactly 384 floats', () {
     final fake = List<double>.filled(localEmbeddingDimensions, 0)..[0] = 1;
@@ -250,6 +291,7 @@ class _TransientFailureEmbedder extends _FakeMeaningEmbedder {
     }
     return super.embed(text);
   }
+}
 
 class _BlockedQueryEmbedder extends _FakeMeaningEmbedder {
   final Completer<void> queryStarted = Completer<void>();
@@ -265,3 +307,4 @@ class _BlockedQueryEmbedder extends _FakeMeaningEmbedder {
     }
     return super.embed(text);
   }
+}

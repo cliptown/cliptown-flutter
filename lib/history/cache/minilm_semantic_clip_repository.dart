@@ -126,6 +126,8 @@ final class MiniLmSemanticClipRepository
       db.execute('ROLLBACK');
       rethrow;
     }
+    // Invalidate query and indexing work started against an older clip set.
+    _generation += 1;
     _startIndexing();
   }
 
@@ -242,6 +244,26 @@ final class MiniLmSemanticClipRepository
     }
   }
 
+  /// A successful query can recover an earlier offline-first backfill.
+  /// Read plaintext only from the already-unlocked authoritative vault.
+  Future<void> _resumeUnindexedAfterRecovery(int generation) async {
+    if (!_indexAvailable || _indexing != null || _pending.isNotEmpty) return;
+    final db = _database;
+    if (db == null ||
+        db.select('SELECT 1 FROM vectors WHERE embedding IS NULL LIMIT 1')
+            .isEmpty) {
+      return;
+    }
+    final clips = await history.load();
+    if (generation != _generation ||
+        !_indexAvailable ||
+        _indexing != null ||
+        _pending.isNotEmpty) {
+      return;
+    }
+    _tryReconcile(clips);
+  }
+
   Future<List<SqliteMiniLmSearchResult>> vectorSearch(
     String query, {
     int limit = 20,
@@ -253,6 +275,8 @@ final class MiniLmSemanticClipRepository
     final generation = _generation;
     final queryVector = await model.embed(query);
     if (generation != _generation) return const [];
+    await _resumeUnindexedAfterRecovery(generation);
+    if (generation != _generation || !_indexAvailable) return const [];
     final rows = _open().select(
       'SELECT clip_id, embedding FROM vectors '
       'WHERE model_id = ? AND dimensions = ? AND embedding IS NOT NULL',
