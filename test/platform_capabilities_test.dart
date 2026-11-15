@@ -150,8 +150,18 @@ void main() {
       r'IPHONEOS_DEPLOYMENT_TARGET = ([0-9.]+);',
     ).allMatches(project).map((match) => match.group(1)).toSet();
 
-    expect(podfile, contains("platform :ios, '13.1'"));
-    expect(deploymentTargets, equals(<String>{'13.1'}));
+    // Desktop-only MiniLM currently shares a native dependency with the
+    // mobile Flutter target. Keep both Apple deployment declarations aligned
+    // and require at least the dependency's published iOS 16.4 floor.
+    final match = RegExp(r"platform :ios, '([0-9.]+)'").firstMatch(podfile);
+    expect(match, isNotNull);
+    final declared = match!.group(1)!;
+    final version = declared.split('.').map(int.parse).toList();
+    expect(version.first, greaterThanOrEqualTo(16));
+    if (version.first == 16) {
+      expect(version[1], greaterThanOrEqualTo(4));
+    }
+    expect(deploymentTargets, equals(<String>{declared}));
   });
 
   test('desktop lifecycle and capture foundations remain evidence backed', () {
