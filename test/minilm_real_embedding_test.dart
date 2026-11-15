@@ -1,6 +1,9 @@
 import 'dart:io';
 
+import 'package:cliptown_app/history/clip_item.dart';
+import 'package:cliptown_app/history/clip_repository.dart';
 import 'package:cliptown_app/history/local_embedding.dart';
+import 'package:cliptown_app/history/minilm_semantic_clip_repository.dart';
 import 'package:cliptown_app/history/minilm_embedder.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -23,6 +26,37 @@ void main() {
           localEmbeddingCosineDistance(a, b),
           lessThan(localEmbeddingCosineDistance(a, unrelated)),
         );
+        final now = DateTime.utc(2026, 11, 14);
+        final index = MiniLmSemanticClipRepository(
+          history: MemoryClipRepository(seed: <ClipItem>[
+            ClipItem(
+              id: 'shoes',
+              kind: ClipKind.text,
+              title: 'Shoe shopping',
+              text: 'Someone purchases new athletic shoes.',
+              createdAt: now,
+              lastUsedAt: now,
+            ),
+            ClipItem(
+              id: 'storm',
+              kind: ClipKind.text,
+              title: 'Weather report',
+              text: 'The storm produced strong winds.',
+              createdAt: now,
+              lastUsedAt: now,
+            ),
+          ]),
+          indexPath: '${temp.path}${Platform.pathSeparator}semantic.db',
+          model: model,
+        );
+        await index.load();
+        await index.waitForIndexing();
+        final matches = await index.vectorSearch(
+          'A person buys a pair of sneakers.',
+        );
+        expect(matches.first.clipId, 'shoes');
+        expect(matches.first.distance, lessThan(matches.last.distance));
+        await index.close();
       } finally {
         await model.dispose();
         await temp.delete(recursive: true);
