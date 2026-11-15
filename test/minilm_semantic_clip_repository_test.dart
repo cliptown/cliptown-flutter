@@ -145,11 +145,11 @@ void main() {
       await repo.save(clips);
       await repo.waitForIndexing();
       expect(await repo.embeddingCount(), 2);
-        expect(
-          await repo.semanticSearchIds('software rollout release'),
-          contains('deploy-command'),
-        );
-        await repo.clear();
+      expect(
+        await repo.semanticSearchIds('software rollout release'),
+        contains('deploy-command'),
+      );
+      await repo.clear();
     },
   );
 
