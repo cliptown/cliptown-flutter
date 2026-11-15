@@ -564,6 +564,9 @@ class ClipStore extends ChangeNotifier {
   @override
   void dispose() {
     _semanticSearch.dispose();
+    if (_repository case final ClosableClipRepository closable) {
+      unawaited(closable.close());
+    }
     super.dispose();
   }
 
