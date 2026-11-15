@@ -92,6 +92,32 @@ void main() {
     },
   );
 
+  test('visible clipping order is memoized until search or history changes', () async {
+    final store = await createDemoStore();
+    final original = store.visibleClips;
+    expect(identical(original, store.visibleClips), isTrue);
+
+    // Shell/status/queue events must not create and sort the whole history.
+    store.setStatusMessage('Saved');
+    store.toggleQueued('deploy-command');
+    expect(store.isQueued('deploy-command'), isTrue);
+    expect(identical(original, store.visibleClips), isTrue);
+
+    await store.markUsed('security-notes');
+    final reordered = store.visibleClips;
+    expect(identical(original, reordered), isFalse);
+    expect(identical(reordered, store.visibleClips), isTrue);
+
+    store.setQuery('security');
+    final filtered = store.visibleClips;
+    expect(identical(reordered, filtered), isFalse);
+    expect(identical(filtered, store.visibleClips), isTrue);
+
+    store.setPinnedOnly(true);
+    expect(identical(filtered, store.visibleClips), isFalse);
+    store.dispose();
+  });
+
   test('saved-item limit is configurable and keeps pinned clips', () async {
     final store = await createDemoStore();
 
