@@ -26,10 +26,17 @@ class ClipStore extends ChangeNotifier {
   final DateTime Function() _clock;
   final List<ClipItem> _clips = <ClipItem>[];
   final List<String> _queuedIds = <String>[];
+  // ClipItem instances are immutable. Cache the expensive lowercase search
+  // projection once per instance; an edited copy gets a fresh cache entry.
+  final Expando<String> _searchTextCache = Expando<String>('clip search text');
+  List<ClipItem>? _visibleClipsCache;
   late final SemanticSearchController _semanticSearch =
       SemanticSearchController(
         repository: _repository,
-        onChanged: notifyListeners,
+        onChanged: () {
+          _invalidateVisibleClips();
+          notifyListeners();
+        },
       );
   Future<void> _operationTail = Future<void>.value();
   CapturePolicy _policy;
@@ -56,34 +63,49 @@ class ClipStore extends ChangeNotifier {
   List<String> get queuedIds => List<String>.unmodifiable(_queuedIds);
   int get queueLength => _queuedIds.length;
 
+  /// Avoid allocating a copy of the entire paste queue for every visible row.
+  bool isQueued(String id) => _queuedIds.contains(id);
+
+  void _invalidateVisibleClips() => _visibleClipsCache = null;
+
+  String _searchText(ClipItem clip) =>
+      _searchTextCache[clip] ??= clip.searchableText;
+
   Set<String> get collections => _clips
       .map((clip) => clip.collection)
       .whereType<String>()
       .where((value) => value.isNotEmpty)
       .toSet();
 
+  /// Stable, immutable snapshot: status, queue and clipboard UI events must
+  /// not refilter or resort up to 100,000 items on every widget rebuild.
   List<ClipItem> get visibleClips {
+    if (_visibleClipsCache case final cached?) return cached;
     final normalized = _query.trim().toLowerCase();
-    final result = _clips
-        .where((clip) => !(_pinnedOnly && !clip.pinned))
-        .where((clip) => _kindFilter == null || clip.kind == _kindFilter)
-        .where(
-          (clip) =>
-              _collectionFilter == null || clip.collection == _collectionFilter,
-        )
-        .where(
-          (clip) =>
-              normalized.isEmpty ||
-              clip.searchableText.contains(normalized) ||
-              _semanticSearch.matches(clip.id),
-        )
-        .toList(growable: false);
+    final exactMatches = <String, bool>{};
+    final result = <ClipItem>[];
+    for (final clip in _clips) {
+      if (_pinnedOnly && !clip.pinned) continue;
+      if (_kindFilter != null && clip.kind != _kindFilter) continue;
+      if (_collectionFilter != null &&
+          clip.collection != _collectionFilter) {
+        continue;
+      }
+      final exact = normalized.isNotEmpty &&
+          _searchText(clip).contains(normalized);
+      if (normalized.isNotEmpty &&
+          !exact &&
+          !_semanticSearch.matches(clip.id)) {
+        continue;
+      }
+      if (normalized.isNotEmpty) exactMatches[clip.id] = exact;
+      result.add(clip);
+    }
     result.sort((a, b) {
-      final pinOrder = (b.pinned ? 1 : 0).compareTo(a.pinned ? 1 : 0);
-      if (pinOrder != 0) return pinOrder;
+      if (a.pinned != b.pinned) return a.pinned ? -1 : 1;
       if (normalized.isNotEmpty) {
-        final aExact = a.searchableText.contains(normalized);
-        final bExact = b.searchableText.contains(normalized);
+        final aExact = exactMatches[a.id]!;
+        final bExact = exactMatches[b.id]!;
         if (aExact != bExact) return aExact ? -1 : 1;
         final aRank = _semanticSearch.rankOf(a.id);
         final bRank = _semanticSearch.rankOf(b.id);
@@ -92,9 +114,11 @@ class ClipStore extends ChangeNotifier {
           if (relevance != 0) return relevance;
         }
       }
-      return b.sortTimestamp.compareTo(a.sortTimestamp);
+      final recent = b.sortTimestamp.compareTo(a.sortTimestamp);
+      // Deterministic tie breaking prevents row thrash after a re-sort.
+      return recent != 0 ? recent : a.id.compareTo(b.id);
     });
-    return result;
+    return _visibleClipsCache = List<ClipItem>.unmodifiable(result);
   }
 
   Future<void> initialize() => _enqueue(() async {
@@ -121,6 +145,7 @@ class ClipStore extends ChangeNotifier {
       _policy = _policy.copyWith(captureEnabled: false);
       _statusMessage = 'Encrypted history is locked. Capture remains off.';
     }
+    _invalidateVisibleClips();
     notifyListeners();
   });
 
@@ -128,24 +153,28 @@ class ClipStore extends ChangeNotifier {
     if (_query == value) return;
     _query = value;
     _semanticSearch.setQuery(value);
+    _invalidateVisibleClips();
     notifyListeners();
   }
 
   void setPinnedOnly(bool value) {
     if (_pinnedOnly == value) return;
     _pinnedOnly = value;
+    _invalidateVisibleClips();
     notifyListeners();
   }
 
   void setKindFilter(ClipKind? value) {
     if (_kindFilter == value) return;
     _kindFilter = value;
+    _invalidateVisibleClips();
     notifyListeners();
   }
 
   void setCollectionFilter(String? value) {
     if (_collectionFilter == value) return;
     _collectionFilter = value;
+    _invalidateVisibleClips();
     notifyListeners();
   }
 
@@ -501,6 +530,7 @@ class ClipStore extends ChangeNotifier {
     _vaultLocked = false;
     _policy = _policy.copyWith(captureEnabled: false);
     _statusMessage = 'Encrypted history erased. Capture remains paused.';
+    _invalidateVisibleClips();
     notifyListeners();
   });
 
@@ -513,6 +543,7 @@ class ClipStore extends ChangeNotifier {
     final beforeStatus = _statusMessage;
     mutation();
     _prune(_clock().toUtc());
+    _invalidateVisibleClips();
     notifyListeners();
     try {
       await _repository.save(List<ClipItem>.of(_clips));
@@ -527,6 +558,7 @@ class ClipStore extends ChangeNotifier {
       _vaultLocked = true;
       _policy = _policy.copyWith(captureEnabled: false);
       _statusMessage = 'Encrypted history write failed. Capture is locked.';
+      _invalidateVisibleClips();
       notifyListeners();
       throw const ClipRepositoryException('encrypted history write failed');
     }
