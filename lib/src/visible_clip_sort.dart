@@ -14,21 +14,20 @@ List<ClipItem> buildVisibleClipSnapshot(
 }) {
   final normalized = query.trim().toLowerCase();
   final exactMatches = <String, bool>{};
-  final result = <ClipItem>[];
-  for (final clip in clips) {
-    if (pinnedOnly && !clip.pinned) continue;
-    if (kindFilter != null && clip.kind != kindFilter) continue;
+  final result = clips.where((clip) {
+    if (pinnedOnly && !clip.pinned) return false;
+    if (kindFilter != null && clip.kind != kindFilter) return false;
     if (collectionFilter != null && clip.collection != collectionFilter) {
-      continue;
+      return false;
     }
     final exact = normalized.isNotEmpty &&
         normalizedSearchText(clip).contains(normalized);
     if (normalized.isNotEmpty && !exact && !semanticMatches(clip.id)) {
-      continue;
+      return false;
     }
     if (normalized.isNotEmpty) exactMatches[clip.id] = exact;
-    result.add(clip);
-  }
+    return true;
+  }).toList();
   result.sort((a, b) {
     if (a.pinned != b.pinned) return a.pinned ? -1 : 1;
     if (normalized.isNotEmpty) {
