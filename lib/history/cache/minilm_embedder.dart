@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
 
@@ -12,19 +13,36 @@ abstract interface class LocalTextEmbeddingModel {
   Future<List<double>> embed(String text);
 }
 
+/// Optional cleanup contract for models with native resources.
+abstract interface class DisposableLocalTextEmbeddingModel {
+  Future<void> dispose();
+}
+
 /// Native MiniLM encoder. Only model weights are downloaded; clipboard content
 /// never leaves the device. The verified model is cached in app support storage.
-final class MiniLmOnDeviceEmbedder implements LocalTextEmbeddingModel {
+final class MiniLmOnDeviceEmbedder
+    implements LocalTextEmbeddingModel, DisposableLocalTextEmbeddingModel {
   MiniLmOnDeviceEmbedder({required this.modelDirectory});
 
   final Directory modelDirectory;
   Future<LlamaEngine>? _loading;
+  Future<void> _tail = Future<void>.value();
+  bool _disposed = false;
 
   @override
   String get modelId => 'cliptown-minilm-l6-v2-q4-gguf-v1';
 
   @override
-  Future<List<double>> embed(String text) async {
+  Future<List<double>> embed(String text) {
+    if (_disposed) return Future<List<double>>.error(StateError('closed model'));
+    // llama.cpp contexts are not concurrently reentrant. Search and backfill
+    // both share this one serialization queue.
+    final operation = _tail.then((_) => _embedOnce(text));
+    _tail = operation.then<void>((_) {}, onError: (Object _) {});
+    return operation;
+  }
+
+  Future<List<double>> _embedOnce(String text) async {
     if (text.trim().isEmpty) {
       throw const FormatException('cannot embed empty text');
     }
@@ -44,6 +62,21 @@ final class MiniLmOnDeviceEmbedder implements LocalTextEmbeddingModel {
       throw const FormatException('MiniLM returned a zero-length embedding');
     }
     return vector;
+  }
+
+  @override
+  Future<void> dispose() async {
+    _disposed = true;
+    await _tail;
+    if (_loading case final pending?) {
+      try {
+        final engine = await pending;
+        await engine.dispose();
+      } on Object {
+        // A failed model load has no native resources to release.
+      }
+    }
+    _loading = null;
   }
 
   Future<LlamaEngine> _loadEngine() async {
