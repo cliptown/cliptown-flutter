@@ -7,6 +7,7 @@ import 'dart:typed_data';
 import 'package:crypto/crypto.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:sqlite3/sqlite3.dart';
+import 'package:rxdart/rxdart.dart';
 
 import '../clip_item.dart';
 import '../clip_repository.dart';
@@ -37,15 +38,14 @@ final class MiniLmSemanticClipRepository
   final LinkedHashMap<String, (String, String)> _pending =
       LinkedHashMap<String, (String, String)>();
   final StreamController<void> _changes = StreamController<void>.broadcast();
-  final StreamController<SemanticIndexProgress> _progressChanges =
-      StreamController<SemanticIndexProgress>.broadcast();
-  SemanticIndexProgress _progress = const SemanticIndexProgress(
-    phase: SemanticIndexPhase.preparing,
-    indexed: 0,
-    total: 0,
+  final BehaviorSubject<SemanticIndexProgress> _progress =
+      BehaviorSubject<SemanticIndexProgress>.seeded(
+    const SemanticIndexProgress(
+      phase: SemanticIndexPhase.preparing,
+      indexed: 0,
+      total: 0,
+    ),
   );
-  int _totalVectors = 0;
-  int _indexedVectors = 0;
   // Reuse query embeddings while the backfill changes index revisions.
   // Bounded LRU: query text must not grow indefinitely in process memory.
   final LinkedHashMap<String, Future<List<double>>> _queryEmbeddings =
@@ -65,31 +65,28 @@ final class MiniLmSemanticClipRepository
   Stream<void> get indexUpdates => _changes.stream;
 
   @override
-  SemanticIndexProgress get indexProgress => _progress;
+  SemanticIndexProgress get indexProgress => _progress.value;
 
   @override
-  Stream<SemanticIndexProgress> get indexProgressUpdates =>
-      _progressChanges.stream;
+  Stream<SemanticIndexProgress> get indexProgressUpdates => _progress.stream;
 
   void _publishProgress(SemanticIndexProgress next) {
-    final current = _progress;
+    final current = _progress.value;
     if (current.phase == next.phase &&
         current.indexed == next.indexed &&
         current.total == next.total &&
         current.downloadPercent == next.downloadPercent) {
       return;
     }
-    _progress = next;
-    if (!_progressChanges.isClosed) _progressChanges.add(next);
+    if (!_progress.isClosed) _progress.add(next);
   }
 
-  void _reportIndexProgress() {
+  void _reportIndexProgress(int indexed, int total) {
     _publishProgress(SemanticIndexProgress(
-      phase: _indexedVectors >= _totalVectors
-          ? SemanticIndexPhase.ready
+      phase: indexed >= total ? SemanticIndexPhase.ready
           : SemanticIndexPhase.indexing,
-      indexed: _indexedVectors,
-      total: _totalVectors,
+      indexed: indexed,
+      total: total,
     ));
   }
 
@@ -101,8 +98,8 @@ final class MiniLmSemanticClipRepository
         : null;
     _publishProgress(SemanticIndexProgress(
       phase: SemanticIndexPhase.downloading,
-      indexed: _indexedVectors,
-      total: _totalVectors,
+      indexed: _progress.value.indexed,
+      total: _progress.value.total,
       downloadPercent: percent,
     ));
   }
@@ -135,8 +132,8 @@ final class MiniLmSemanticClipRepository
       _database = null;
       _publishProgress(SemanticIndexProgress(
         phase: SemanticIndexPhase.unavailable,
-        indexed: _indexedVectors,
-        total: _totalVectors,
+        indexed: _progress.value.indexed,
+        total: _progress.value.total,
       ));
     }
   }
@@ -228,9 +225,10 @@ final class MiniLmSemanticClipRepository
     _lastDesired = desired;
     _hasIndexedSnapshot = true;
     _needsRecovery = false;
-    _totalVectors = desired.length;
-    _indexedVectors = desired.length - _pending.length;
-    _reportIndexProgress();
+    _reportIndexProgress(
+      desired.length - _pending.length,
+      desired.length,
+    );
     // Invalidate query and indexing work started against an older clip set.
     _generation += 1;
     _startIndexing();
@@ -308,6 +306,7 @@ final class MiniLmSemanticClipRepository
 
   Future<void> _drain() async {
     final generation = _generation;
+    final startingIndexed = _progress.value.indexed;
     var indexed = 0;
     while (_pending.isNotEmpty && generation == _generation) {
       final entry = _pending.entries.first;
@@ -330,8 +329,9 @@ final class MiniLmSemanticClipRepository
           ],
         );
         indexed += 1;
-        _indexedVectors += 1;
-        if (indexed % 8 == 0 || _pending.isEmpty) _reportIndexProgress();
+        if (indexed % 8 == 0 || _pending.isEmpty) {
+          _reportIndexProgress(startingIndexed + indexed, _progress.value.total);
+        }
         if (indexed % 8 == 0 && !_changes.isClosed) _changes.add(null);
       } on Object {
         // Model unavailable/offline: leave rows pending for restart or the
@@ -340,8 +340,8 @@ final class MiniLmSemanticClipRepository
         _pending.clear();
         _publishProgress(SemanticIndexProgress(
           phase: SemanticIndexPhase.unavailable,
-          indexed: _indexedVectors,
-          total: _totalVectors,
+          indexed: _progress.value.indexed,
+          total: _progress.value.total,
         ));
         break;
       }
@@ -493,7 +493,7 @@ final class MiniLmSemanticClipRepository
     _database?.close();
     _database = null;
     await _changes.close();
-    await _progressChanges.close();
+    await _progress.close();
     if (model case final DisposableLocalTextEmbeddingModel disposable) {
       await disposable.dispose();
     }
@@ -523,9 +523,7 @@ final class MiniLmSemanticClipRepository
       final file = File('$indexPath$suffix');
       if (await file.exists()) await file.delete();
     }
-    _totalVectors = 0;
-    _indexedVectors = 0;
-    _reportIndexProgress();
+    _reportIndexProgress(0, 0);
     if (!_changes.isClosed) _changes.add(null);
   }
 }

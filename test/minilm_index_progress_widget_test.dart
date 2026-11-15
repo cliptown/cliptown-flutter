@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import 'package:rxdart/rxdart.dart';
+
 import 'package:cliptown_app/cliptown_app.dart';
 import 'package:cliptown_app/history/clip_item.dart';
 import 'package:cliptown_app/history/clip_repository.dart';
@@ -50,7 +52,7 @@ void main() {
     await tester.tap(find.byKey(const Key('retry-local-semantic-search')));
     await tester.pumpAndSettle();
 
-    expect(repository.retries, 1);
+    expect(repository.retries.value, 1);
     expect(find.textContaining('Meaning search ready (2 clips)'), findsOneWidget);
     expect(find.text('Deploy command'), findsOneWidget);
 
@@ -62,29 +64,29 @@ void main() {
 
 final class _ProgressRepository
     implements ClipRepository, SemanticIndexProgressSource {
-  final StreamController<SemanticIndexProgress> _events =
-      StreamController<SemanticIndexProgress>.broadcast();
-  SemanticIndexProgress _status = const SemanticIndexProgress(
-    phase: SemanticIndexPhase.preparing,
-    indexed: 0,
-    total: 2,
+  final BehaviorSubject<SemanticIndexProgress> _events =
+      BehaviorSubject<SemanticIndexProgress>.seeded(
+    const SemanticIndexProgress(
+      phase: SemanticIndexPhase.preparing,
+      indexed: 0,
+      total: 2,
+    ),
   );
-  int retries = 0;
+  final ValueNotifier<int> retries = ValueNotifier<int>(0);
 
   @override
-  SemanticIndexProgress get indexProgress => _status;
+  SemanticIndexProgress get indexProgress => _events.value;
 
   @override
   Stream<SemanticIndexProgress> get indexProgressUpdates => _events.stream;
 
   void publish(SemanticIndexProgress status) {
-    _status = status;
     _events.add(status);
   }
 
   @override
   Future<void> retrySemanticIndex() async {
-    retries += 1;
+    retries.value += 1;
     publish(const SemanticIndexProgress(
       phase: SemanticIndexPhase.ready,
       indexed: 2,
