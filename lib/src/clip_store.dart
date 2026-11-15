@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 
+import '../history/cache/semantic_search_controller.dart';
 import '../history/capture_policy.dart';
 import '../history/clip_item.dart';
 import '../history/clip_repository.dart';
@@ -25,7 +26,11 @@ class ClipStore extends ChangeNotifier {
   final DateTime Function() _clock;
   final List<ClipItem> _clips = <ClipItem>[];
   final List<String> _queuedIds = <String>[];
-  Set<String> _semanticMatchIds = const <String>{};
+  late final SemanticSearchController _semanticSearch =
+      SemanticSearchController(
+        repository: _repository,
+        onChanged: notifyListeners,
+      );
   Future<void> _operationTail = Future<void>.value();
   CapturePolicy _policy;
   String _query = '';
@@ -36,7 +41,6 @@ class ClipStore extends ChangeNotifier {
   bool _vaultLocked = false;
   String? _statusMessage;
   int _idCounter = 0;
-  int _queryGeneration = 0;
 
   bool get initialized => _initialized;
   bool get vaultLocked => _vaultLocked;
@@ -71,12 +75,23 @@ class ClipStore extends ChangeNotifier {
           (clip) =>
               normalized.isEmpty ||
               clip.searchableText.contains(normalized) ||
-              _semanticMatchIds.contains(clip.id),
+              _semanticSearch.matches(clip.id),
         )
         .toList(growable: false);
     result.sort((a, b) {
       final pinOrder = (b.pinned ? 1 : 0).compareTo(a.pinned ? 1 : 0);
       if (pinOrder != 0) return pinOrder;
+      if (normalized.isNotEmpty) {
+        final aExact = a.searchableText.contains(normalized);
+        final bExact = b.searchableText.contains(normalized);
+        if (aExact != bExact) return aExact ? -1 : 1;
+        final aRank = _semanticSearch.rankOf(a.id);
+        final bRank = _semanticSearch.rankOf(b.id);
+        if (aRank != null && bRank != null) {
+          final relevance = aRank.compareTo(bRank);
+          if (relevance != 0) return relevance;
+        }
+      }
       return b.sortTimestamp.compareTo(a.sortTimestamp);
     });
     return result;
@@ -97,6 +112,7 @@ class ClipStore extends ChangeNotifier {
       _initialized = true;
       _vaultLocked = false;
       _statusMessage = null;
+      _semanticSearch.activate();
     } on Object {
       _clips.clear();
       _queuedIds.clear();
@@ -111,37 +127,8 @@ class ClipStore extends ChangeNotifier {
   void setQuery(String value) {
     if (_query == value) return;
     _query = value;
-    _queryGeneration += 1;
-    final generation = _queryGeneration;
-    _semanticMatchIds = const <String>{};
+    _semanticSearch.setQuery(value);
     notifyListeners();
-    final normalized = value.trim();
-    final repository = _repository;
-    if (normalized.length >= 2) {
-      if (repository is! SemanticClipRepository) return;
-      unawaited(
-        _loadSemanticMatches(
-          repository as SemanticClipRepository,
-          normalized,
-          generation,
-        ),
-      );
-    }
-  }
-
-  Future<void> _loadSemanticMatches(
-    SemanticClipRepository repository,
-    String query,
-    int generation,
-  ) async {
-    try {
-      final matches = await repository.semanticSearchIds(query);
-      if (generation != _queryGeneration) return;
-      _semanticMatchIds = matches.toSet();
-      notifyListeners();
-    } on Object {
-      // Lexical search remains available if the local vector index is damaged.
-    }
   }
 
   void setPinnedOnly(bool value) {
@@ -573,6 +560,15 @@ class ClipStore extends ChangeNotifier {
   String _nextId(DateTime now) {
     _idCounter += 1;
     return '${now.microsecondsSinceEpoch.toRadixString(36)}-${_idCounter.toRadixString(36)}';
+  }
+
+  @override
+  void dispose() {
+    _semanticSearch.dispose();
+    if (_repository case final ClosableClipRepository closable) {
+      unawaited(closable.close());
+    }
+    super.dispose();
   }
 
   Future<T> _enqueue<T>(Future<T> Function() operation) {

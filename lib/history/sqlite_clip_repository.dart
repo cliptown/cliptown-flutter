@@ -29,11 +29,13 @@ class SqliteClipRepository implements ClipRepository, SemanticClipRepository {
     required this.path,
     required this.secretStore,
     Cipher? keyGenerator,
+    this.generateLegacyEmbeddings = true,
   }) : _keyGenerator = keyGenerator ?? AesGcm.with256bits();
 
   final String path;
   final VaultSecretStore secretStore;
   final Cipher _keyGenerator;
+  final bool generateLegacyEmbeddings;
   Database? _database;
 
   @override
@@ -102,7 +104,9 @@ class SqliteClipRepository implements ClipRepository, SemanticClipRepository {
             clip.sortTimestamp.toUtc().toIso8601String(),
             clip.pinned ? 1 : 0,
           ]);
-          if (clip.text != null && clip.text!.trim().isNotEmpty) {
+          if (generateLegacyEmbeddings &&
+              clip.text != null &&
+              clip.text!.trim().isNotEmpty) {
             embeddingStatement.execute(<Object?>[
               clip.id,
               localEmbeddingModel,
@@ -279,7 +283,9 @@ class SqliteClipRepository implements ClipRepository, SemanticClipRepository {
   }
 }
 
-Future<SqliteClipRepository> createPlatformSqliteClipRepository() async {
+Future<SqliteClipRepository> createPlatformSqliteClipRepository({
+  bool generateLegacyEmbeddings = true,
+}) async {
   final supportDirectory = await getApplicationSupportDirectory();
   final path = <String>[
     supportDirectory.path,
@@ -289,5 +295,6 @@ Future<SqliteClipRepository> createPlatformSqliteClipRepository() async {
   return SqliteClipRepository(
     path: path,
     secretStore: FlutterSecureVaultSecretStore(),
+    generateLegacyEmbeddings: generateLegacyEmbeddings,
   );
 }

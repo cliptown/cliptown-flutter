@@ -121,6 +121,14 @@ jobs:
           flutter config --enable-${{ matrix.target }}-desktop
           flutter pub get
           flutter build ${{ matrix.target }} --debug
+      - name: Prove MiniLM native semantic retrieval (real GGUF)
+        if: matrix.target == 'linux'
+        timeout-minutes: 10
+        shell: bash
+        working-directory: cliptown-flutter
+        env:
+          CLIPTOWN_RUN_MINILM_LIVE_TEST: '1'
+        run: flutter test test/minilm_real_embedding_test.dart --reporter=expanded
       - name: Run installed ${{ matrix.target }} desktop journeys
         id: desktop_test
         continue-on-error: true

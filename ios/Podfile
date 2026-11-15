@@ -1,5 +1,5 @@
 # Universal BLE 2.x requires iOS 13.1 or newer.
-platform :ios, '13.1'
+platform :ios, '16.4'
 
 # CocoaPods analytics sends network stats synchronously affecting flutter build latency.
 ENV['COCOAPODS_DISABLE_STATS'] = 'true'

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'clip_item.dart';
 
 abstract interface class ClipRepository {
@@ -10,6 +12,14 @@ abstract interface class ClipRepository {
 
 abstract interface class SemanticClipRepository {
   Future<List<String>> semanticSearchIds(String query, {int limit = 20});
+}
+
+abstract interface class ClosableClipRepository {
+  Future<void> close();
+}
+
+abstract interface class SemanticClipRepositoryUpdates {
+  Stream<void> get indexUpdates;
 }
 
 class MemoryClipRepository implements ClipRepository {
