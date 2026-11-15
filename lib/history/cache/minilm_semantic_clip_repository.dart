@@ -104,11 +104,8 @@ final class MiniLmSemanticClipRepository
   }
 
   void _reconcile(List<ClipItem> clips) {
-    final db = _open();
     final desired = <String, (String, String)>{};
-    final ids = <String>{};
     for (final clip in clips) {
-      ids.add(clip.id);
       if (clip.text case final text?) {
         if (text.trim().isNotEmpty) {
           desired[clip.id] = (
@@ -118,8 +115,22 @@ final class MiniLmSemanticClipRepository
         }
       }
     }
-
+    final db = _open();
     db.execute('BEGIN IMMEDIATE');
+    try {
+      _applyDesiredIndex(db, desired);
+      db.execute('COMMIT');
+    } on Object {
+      db.execute('ROLLBACK');
+      rethrow;
+    }
+    _startIndexing();
+  }
+
+  void _applyDesiredIndex(
+    Database db,
+    Map<String, (String, String)> desired,
+  ) {
     final active = db.prepare(
       'INSERT INTO _active_clip_ids (clip_id) VALUES (?)',
     );
@@ -142,7 +153,7 @@ final class MiniLmSemanticClipRepository
     );
     try {
       db.execute('DELETE FROM _active_clip_ids');
-      for (final id in ids) {
+      for (final id in desired.keys) {
         active.execute(<Object?>[id]);
       }
       db.execute(
@@ -161,21 +172,11 @@ final class MiniLmSemanticClipRepository
           _pending[entry.key] = entry.value;
         }
       }
-      // Clips that cease to have text must not retain older text vectors.
-      // The desired set is smaller than active IDs when images/files exist.
-      for (final id in ids.difference(desired.keys.toSet())) {
-        db.execute('DELETE FROM vectors WHERE clip_id = ?', <Object?>[id]);
-      }
-      db.execute('COMMIT');
-    } on Object {
-      db.execute('ROLLBACK');
-      rethrow;
     } finally {
       active.close();
       upsert.close();
       missing.close();
     }
-    _startIndexing();
   }
 
   void _startIndexing() {
