@@ -9,6 +9,7 @@ import '../history/clip_item.dart';
 import '../history/clip_repository.dart';
 import '../history/clipboard_snapshot.dart';
 import '../history/text_dedupe.dart';
+import 'cache/clip_retention.dart';
 import 'clip_store_types.dart';
 import 'visible_clip_sort.dart';
 
@@ -79,17 +80,18 @@ class ClipStore extends ChangeNotifier {
       .toSet();
 
   /// Stable snapshot shared by unrelated UI rebuilds.
-  List<ClipItem> get visibleClips => _visibleClipsCache ??=
-      buildVisibleClipSnapshot(
-        _clips,
-        query: _query,
-        pinnedOnly: _pinnedOnly,
-        kindFilter: _kindFilter,
-        collectionFilter: _collectionFilter,
-        semanticMatches: _semanticSearch.matches,
-        semanticRank: _semanticSearch.rankOf,
-        normalizedSearchText: _searchText,
-      );
+  List<ClipItem> get visibleClips {
+    return _visibleClipsCache ??= buildVisibleClipSnapshot(
+      _clips,
+      query: _query,
+      pinnedOnly: _pinnedOnly,
+      kindFilter: _kindFilter,
+      collectionFilter: _collectionFilter,
+      semanticMatches: _semanticSearch.matches,
+      semanticRank: _semanticSearch.rankOf,
+      normalizedSearchText: _searchText,
+    );
+  }
 
   Future<void> initialize() => _enqueue(() async {
     if (_initialized) return;
@@ -542,12 +544,12 @@ class ClipStore extends ChangeNotifier {
         .toSet();
     _clips.removeWhere((clip) => removed.contains(clip.id));
 
-    final unpinned = _clips.where((clip) => !clip.pinned).toList()
-      ..sort((a, b) => b.sortTimestamp.compareTo(a.sortTimestamp));
-    if (unpinned.length > _policy.maxHistoryItems) {
-      removed.addAll(
-        unpinned.skip(_policy.maxHistoryItems).map((clip) => clip.id),
-      );
+    final overflow = overflowUnpinnedClipIds(
+      _clips,
+      _policy.maxHistoryItems,
+    );
+    if (overflow.isNotEmpty) {
+      removed.addAll(overflow);
       _clips.removeWhere((clip) => removed.contains(clip.id));
     }
     _queuedIds.removeWhere(removed.contains);
