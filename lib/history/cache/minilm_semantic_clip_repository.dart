@@ -322,11 +322,16 @@ final class MiniLmSemanticClipRepository
       _queryEmbeddings.remove(_queryEmbeddings.keys.first);
     }
     // Do not cache failed/offline model loads: a subsequent search must retry.
-    unawaited(pending.then<void>((_) {}, onError: (Object _) {
-      if (identical(_queryEmbeddings[query], pending)) {
-        _queryEmbeddings.remove(query);
-      }
-    }));
+    unawaited(
+      pending.then<void>(
+        (_) {},
+        onError: (Object _) {
+          if (identical(_queryEmbeddings[query], pending)) {
+            _queryEmbeddings.remove(query);
+          }
+        },
+      ),
+    );
     return pending;
   }
 
