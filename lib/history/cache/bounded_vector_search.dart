@@ -18,7 +18,7 @@ final class BoundedVectorSearch {
   final int limit;
   final List<ClipVectorMatch> _heap = <ClipVectorMatch>[];
 
-  int get retainedCount => _heap.length;
+  int retainedCount() => _heap.length;
 
   static bool _isWorse(ClipVectorMatch a, ClipVectorMatch b) {
     final comparison = a.distance.compareTo(b.distance);
