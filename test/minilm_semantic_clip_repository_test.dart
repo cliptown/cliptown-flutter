@@ -109,8 +109,8 @@ void main() {
 
     model.allow();
     await repo.waitForIndexing();
-    // Index notifications start another query while the text stays unchanged.
-    await Future<void>.delayed(const Duration(milliseconds: 50));
+    // Index notifications are throttled to keep the UI responsive.
+    await Future<void>.delayed(const Duration(milliseconds: 150));
     expect(
       store.visibleClips.map((clip) => clip.id),
       contains('deploy-command'),
@@ -243,6 +243,24 @@ void main() {
     );
     model.releaseQuery();
     expect(await search, isEmpty);
+    await repo.clear();
+  });
+
+  test('query embedding is reused across index revisions', () async {
+    final model = _FakeMeaningEmbedder();
+    final repo = newRepository(embedder: model);
+    final clips = await repo.load();
+    await repo.waitForIndexing();
+    expect(model.calls, 2);
+
+    await repo.vectorSearch('software rollout release');
+    await repo.vectorSearch('software rollout release');
+    await repo.save(clips.reversed.toList());
+    await repo.vectorSearch('software rollout release');
+    expect(model.calls, 3, reason: 'same query needs one model inference');
+
+    await repo.vectorSearch('entirely different query');
+    expect(model.calls, 4);
     await repo.clear();
   });
 
