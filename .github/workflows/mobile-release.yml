@@ -11,6 +11,11 @@ on:
         description: Positive monotonically increasing Android build number
         required: true
         type: string
+      publish_internal:
+        description: Upload this signed AAB to Google Play Internal testing
+        required: true
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -22,6 +27,7 @@ concurrency:
 env:
   FLUTTER_VERSION: 3.44.2
   CLIPTOWN_INTERFACES_REF: e4e957b5372dc363fe6a52559c8959f0de781efb
+  CLIPTOWN_PLAY_PACKAGE: com.cliptown.cliptown_app
 
 jobs:
   guards:
@@ -33,6 +39,14 @@ jobs:
           persist-credentials: false
       - name: Reject unsafe Android release configuration
         run: python3 scripts/check_android_release_contract.py
+      - name: Enforce current Google Play SDK and package identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          gradle_id="$(sed -n 's/^[[:space:]]*applicationId = "\([^"]*\)".*/\1/p' android/app/build.gradle.kts | head -n 1)"
+          [[ "$gradle_id" == "$CLIPTOWN_PLAY_PACKAGE" ]]
+          grep -Fq 'compileSdk = 36' android/app/build.gradle.kts
+          grep -Fq 'targetSdk = 36' android/app/build.gradle.kts
 
   android-aab:
     needs: guards
@@ -137,6 +151,7 @@ jobs:
           printf '%s\n' "$GITHUB_RUN_ID" >"$evidence/workflow-run-id.txt"
           printf '%s\n' "$RELEASE_VERSION" >"$evidence/version.txt"
           printf '%s\n' "$RELEASE_BUILD_NUMBER" >"$evidence/build-number.txt"
+          printf '%s\n' "$CLIPTOWN_PLAY_PACKAGE" >"$evidence/package-name.txt"
           flutter pub deps --json >"$evidence/dependency-graph.json"
           jarsigner -verify -verbose -certs "$aab" >"$evidence/signing-verification.txt"
           grep -Fq "jar verified." "$evidence/signing-verification.txt"
@@ -156,6 +171,22 @@ jobs:
           path: ${{ runner.temp }}/release-evidence/android
           if-no-files-found: error
           retention-days: 30
+
+      - name: Require Play service account for Internal testing
+        if: ${{ inputs.publish_internal }}
+        env:
+          PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
+        run: test -n "$PLAY_SERVICE_ACCOUNT_JSON"
+
+      - name: Upload to Google Play Internal testing
+        if: ${{ inputs.publish_internal }}
+        uses: r0adkll/upload-google-play@e738b9dd8f2476ea806d921b64aacd24f34515a5 # v1.1.5
+        with:
+          serviceAccountJsonPlainText: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
+          packageName: ${{ env.CLIPTOWN_PLAY_PACKAGE }}
+          releaseFiles: cliptown-flutter/build/app/outputs/bundle/release/app-release.aab
+          track: internal
+          status: completed
 
       - name: Destroy materialized signing files
         if: always()
