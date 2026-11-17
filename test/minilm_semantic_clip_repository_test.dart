@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:cliptown_app/history/clip_item.dart';
 import 'package:cliptown_app/history/clip_repository.dart';
 import 'package:cliptown_app/history/local_embedding.dart';
 import 'package:cliptown_app/history/minilm_embedder.dart';
@@ -108,8 +109,8 @@ void main() {
 
     model.allow();
     await repo.waitForIndexing();
-    // Index notifications start another query while the text stays unchanged.
-    await Future<void>.delayed(const Duration(milliseconds: 50));
+    // Index notifications are throttled to keep the UI responsive.
+    await Future<void>.delayed(const Duration(milliseconds: 150));
     expect(
       store.visibleClips.map((clip) => clip.id),
       contains('deploy-command'),
@@ -242,6 +243,99 @@ void main() {
     );
     model.releaseQuery();
     expect(await search, isEmpty);
+    await repo.clear();
+  });
+
+  test('query embedding is reused across index revisions', () async {
+    final model = _FakeMeaningEmbedder();
+    final repo = newRepository(embedder: model);
+    final clips = await repo.load();
+    await repo.waitForIndexing();
+    expect(model.calls, 2);
+
+    await repo.vectorSearch('software rollout release');
+    await repo.vectorSearch('software rollout release');
+    await repo.save(clips.reversed.toList());
+    await repo.vectorSearch('software rollout release');
+    expect(model.calls, 3, reason: 'same query needs one model inference');
+
+    await repo.vectorSearch('entirely different query');
+    expect(model.calls, 4);
+    await repo.clear();
+  });
+
+  test('reordering unchanged clips preserves an in-flight query', () async {
+    final model = _BlockedQueryEmbedder();
+    final repo = newRepository(embedder: model);
+    final clips = await repo.load();
+    await repo.waitForIndexing();
+
+    final search = repo.semanticSearchIds('software rollout release');
+    await model.queryStarted.future;
+    await repo.save(clips.reversed.toList());
+    model.releaseQuery();
+
+    expect(await search, contains('deploy-command'));
+    await repo.clear();
+  });
+
+  test(
+    'paged vector search produces exact top K past the first batch',
+    () async {
+      final now = DateTime.utc(2026, 11, 14);
+      final many = List<ClipItem>.generate(
+        520,
+        (index) => ClipItem(
+          id: 'clip-${index.toString().padLeft(4, '0')}',
+          kind: ClipKind.text,
+          title: 'Note $index',
+          text: 'ordinary saved note $index',
+          createdAt: now,
+          lastUsedAt: now,
+        ),
+      );
+      final repo = newRepository(history: MemoryClipRepository(seed: many));
+      await repo.load();
+      await repo.waitForIndexing();
+      expect(await repo.embeddingCount(), 520);
+
+      final results = await repo.vectorSearch('unrelated text', limit: 12);
+      expect(
+        results.map((match) => match.clipId),
+        many.take(12).map((clip) => clip.id),
+      );
+      expect(results, hasLength(12));
+      await repo.clear();
+    },
+  );
+
+  test('index status reflects failure, retry and completed backfill', () async {
+    final model = _TransientFailureEmbedder();
+    final repo = newRepository(embedder: model);
+    final states = <SemanticIndexProgress>[];
+    final subscription = repo.indexProgressUpdates.listen(states.add);
+    await repo.load();
+    await repo.waitForIndexing();
+    expect(repo.indexProgress.phase, SemanticIndexPhase.unavailable);
+
+    await repo.retrySemanticIndex();
+    await repo.waitForIndexing();
+    expect(repo.indexProgress.phase, SemanticIndexPhase.ready);
+    expect(repo.indexProgress.indexed, 2);
+    expect(repo.indexProgress.total, 2);
+    expect(states.any((s) => s.phase == SemanticIndexPhase.indexing), isTrue);
+    await subscription.cancel();
+    await repo.clear();
+  });
+
+  test('reports model-download percentage without clip plaintext', () async {
+    final repo = newRepository();
+    repo.reportModelDownloadProgress(1024, 2048);
+    expect(repo.indexProgress.phase, SemanticIndexPhase.downloading);
+    expect(repo.indexProgress.downloadPercent, 50);
+    expect(repo.indexProgress.label, contains('50%'));
+    await repo.load();
+    await repo.waitForIndexing();
     await repo.clear();
   });
 

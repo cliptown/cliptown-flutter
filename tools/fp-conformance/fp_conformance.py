@@ -406,6 +406,10 @@ DART_TOP_MUT = re.compile(r"^(var|late\s+\w+|[A-Za-z_][\w<>,\s?]*)\s+\w+\s*=")
 DART_LATE = re.compile(r"(?<![\w.])late\s+(?!final\b)")
 DART_NONFINAL_FIELD = re.compile(
     r"^\s{2,}(?!final\b|const\b|static\s+const\b|static\s+final\b|@)"
+    # Accessors and abstract getters are read APIs, not mutable fields. The
+    # type token pattern below permits spaces and previously classified
+    # 'Type get property => ...' as a mutable 'get' member.
+    r"(?![A-Z][\w<>,\s?]*\s+get\s+\w+\s*(?:=>|;|\{))"
     r"(?:late\s+)?[A-Z][\w<>,\s?]*\s+_?\w+\s*(=|;)")
 DART_THROW = re.compile(r"(?<![\w.])throw\s+")
 DART_PRINT = re.compile(r"(?<![\w.])(print|debugPrint)\s*\(")

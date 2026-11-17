@@ -236,10 +236,15 @@ class _ClipTownHomeState extends State<ClipTownHome> {
   /// animation) across selection changes and lets the selection scroll into
   /// view.
   final Map<String, GlobalKey> _rowKeys = <String, GlobalKey>{};
+  final Expando<String> _rowIdsByKey = Expando<String>('clip row ids');
+  final Map<String, int> _visibleClipIndices = <String, int>{};
   String? _expandedClipId;
 
-  GlobalKey _rowKeyFor(String id) =>
-      _rowKeys.putIfAbsent(id, () => GlobalKey(debugLabel: 'clip-row'));
+  GlobalKey _rowKeyFor(String id) => _rowKeys.putIfAbsent(id, () {
+    final key = GlobalKey(debugLabel: 'clip-row');
+    _rowIdsByKey[key] = id;
+    return key;
+  });
 
   void _collapseRow(String id) {
     if (_expandedClipId == id) setState(() => _expandedClipId = null);
@@ -679,13 +684,21 @@ class _ClipTownHomeState extends State<ClipTownHome> {
   Widget _buildBody(BuildContext context) {
     final localWorkAllowed = stateMachine.state.permitsLocalWork;
     final clips = localWorkAllowed ? store.visibleClips : const <ClipItem>[];
-    _visibleClips = clips;
-    // Forget keys of rows that are no longer in the list.
-    final visibleIds = <String>{for (final clip in clips) clip.id};
-    _rowKeys.removeWhere((id, _) => !visibleIds.contains(id));
-    if (_expandedClipId case final id? when !visibleIds.contains(id)) {
-      _expandedClipId = null;
+    if (!identical(clips, _visibleClips)) {
+      // Only rebuild the lookup when the sorted snapshot changes. Clipboard
+      // monitoring/status notifications frequently rebuild the surrounding
+      // shell without changing the actual history.
+      _visibleClipIndices.clear();
+      for (final (index, clip) in clips.indexed) {
+        _visibleClipIndices[clip.id] = index;
+      }
+      _rowKeys.removeWhere((id, _) => !_visibleClipIndices.containsKey(id));
+      if (_expandedClipId case final id?
+          when !_visibleClipIndices.containsKey(id)) {
+        _expandedClipId = null;
+      }
     }
+    _visibleClips = clips;
     final selectedIndex = clips.isEmpty
         ? -1
         : _selectedIndex.clamp(0, clips.length - 1);
@@ -780,47 +793,54 @@ class _ClipTownHomeState extends State<ClipTownHome> {
                         padding: const EdgeInsets.only(bottom: 88),
                         sliver: SliverList(
                           key: const Key('clip-history-list'),
-                          delegate: SliverChildBuilderDelegate((
-                            context,
-                            index,
-                          ) {
-                            if (index.isOdd) return const SizedBox(height: 8);
-                            final clipIndex = index ~/ 2;
-                            final clip = clips[clipIndex];
-                            final selected = clipIndex == selectedIndex;
-                            return _ExpandingRow(
-                              key: _rowKeyFor(clip.id),
-                              expanded: clip.id == _expandedClipId,
-                              onCollapse: () => _collapseRow(clip.id),
-                              builder: (context, fitExtra, overflowExtra) =>
-                                  _ClipCard(
-                                    clip: clip,
-                                    now: now,
-                                    selected: selected,
-                                    extraHeight: fitExtra,
-                                    overflowExtraHeight: overflowExtra,
-                                    quickCopyLabel: clipIndex < 9
-                                        ? '${_isApple ? '⌘' : 'Ctrl+'}${clipIndex + 1}'
-                                        : null,
-                                    onSelect: () => setState(() {
-                                      _selectedIndex = clipIndex;
-                                      _expandedClipId = clip.id;
-                                    }),
-                                    queued: store.queuedIds.contains(clip.id),
-                                    onCopy: () => _run(
-                                      () => clipboardController.copy(clip),
+                          delegate: SliverChildBuilderDelegate(
+                            (context, index) {
+                              if (index.isOdd) return const SizedBox(height: 8);
+                              final clipIndex = index ~/ 2;
+                              final clip = clips[clipIndex];
+                              final selected = clipIndex == selectedIndex;
+                              return _ExpandingRow(
+                                key: _rowKeyFor(clip.id),
+                                expanded: clip.id == _expandedClipId,
+                                onCollapse: () => _collapseRow(clip.id),
+                                builder: (context, fitExtra, overflowExtra) =>
+                                    _ClipCard(
+                                      clip: clip,
+                                      now: now,
+                                      selected: selected,
+                                      extraHeight: fitExtra,
+                                      overflowExtraHeight: overflowExtra,
+                                      quickCopyLabel: clipIndex < 9
+                                          ? '${_isApple ? '⌘' : 'Ctrl+'}${clipIndex + 1}'
+                                          : null,
+                                      onSelect: () => setState(() {
+                                        _selectedIndex = clipIndex;
+                                        _expandedClipId = clip.id;
+                                      }),
+                                      queued: store.isQueued(clip.id),
+                                      onCopy: () => _run(
+                                        () => clipboardController.copy(clip),
+                                      ),
+                                      onToggleQueued: () => _runLocal(
+                                        () => store.toggleQueued(clip.id),
+                                      ),
+                                      onTogglePinned: () => _runLocal(
+                                        () => store.togglePinned(clip.id),
+                                      ),
+                                      onAction: (action) =>
+                                          _handleClipAction(clip, action),
                                     ),
-                                    onToggleQueued: () => _runLocal(
-                                      () => store.toggleQueued(clip.id),
-                                    ),
-                                    onTogglePinned: () => _runLocal(
-                                      () => store.togglePinned(clip.id),
-                                    ),
-                                    onAction: (action) =>
-                                        _handleClipAction(clip, action),
-                                  ),
-                            );
-                          }, childCount: clips.length * 2 - 1),
+                              );
+                            },
+                            childCount: clips.length * 2 - 1,
+                            // Preserve row elements (including expansion/scroll
+                            // state) when an item moves to a different sort index.
+                            findChildIndexCallback: (key) {
+                              final id = _rowIdsByKey[key];
+                              final index = _visibleClipIndices[id];
+                              return index == null ? null : index * 2;
+                            },
+                          ),
                         ),
                       ),
                   ],
@@ -834,21 +854,33 @@ class _ClipTownHomeState extends State<ClipTownHome> {
   }
 
   Widget _buildSearch() {
+    final progress = store.semanticIndexProgress;
     return TextField(
       key: const Key('clip-search'),
       controller: _searchController,
       focusNode: _searchFocus,
       autofocus: desktopShell != null,
       onChanged: _onQueryChanged,
-      decoration: const InputDecoration(
-        prefixIcon: Tooltip(
+      decoration: InputDecoration(
+        prefixIcon: const Tooltip(
           message:
               'Searches text, titles, tags, collections, source apps and '
               'related meaning. Esc clears.',
           child: Icon(Icons.search),
         ),
         labelText: 'Search content, related text, tags, collections, and apps',
-        helperText: '↑ ↓ to select • Return copies • Esc clears or hides',
+        helperMaxLines: 2,
+        helperText: progress == null
+            ? '↑ ↓ to select • Return copies • Esc clears or hides'
+            : '${progress.label} • ↑ ↓ selects • Return copies • Esc clears',
+        suffixIcon: progress?.canRetry == true
+            ? IconButton(
+                key: const Key('retry-local-semantic-search'),
+                icon: const Icon(Icons.refresh),
+                tooltip: 'Retry local semantic search indexing',
+                onPressed: () => unawaited(store.retrySemanticIndex()),
+              )
+            : null,
       ),
     );
   }

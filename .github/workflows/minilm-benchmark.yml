@@ -1,0 +1,49 @@
+name: MiniLM vector-search benchmark
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'tool/benchmarks/minilm_vector_benchmark.dart'
+      - '.github/workflows/minilm-benchmark.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: minilm-benchmark-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  exact-vector-benchmark:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+          path: cliptown-flutter
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+          repository: cliptown/cliptown-interfaces
+          ref: e4e957b5372dc363fe6a52559c8959f0de781efb
+          path: cliptown-interfaces
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+        with:
+          flutter-version: '3.44.2'
+          cache: true
+      - name: Resolve pinned dependencies
+        working-directory: cliptown-flutter
+        run: flutter pub get
+      - name: Benchmark 10k and 100k local vector indexes
+        working-directory: cliptown-flutter
+        timeout-minutes: 15
+        run: dart run tool/benchmarks/minilm_vector_benchmark.dart --output=build/benchmarks/minilm.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: minilm-vector-benchmark
+          path: cliptown-flutter/build/benchmarks/minilm.json
+          if-no-files-found: error
