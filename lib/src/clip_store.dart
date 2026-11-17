@@ -9,7 +9,10 @@ import '../history/clip_item.dart';
 import '../history/clip_repository.dart';
 import '../history/clipboard_snapshot.dart';
 import '../history/text_dedupe.dart';
+import 'cache/clip_retention.dart';
+import 'cache/visible_clip_memo.dart';
 import 'clip_store_types.dart';
+import 'visible_clip_sort.dart';
 
 export 'clip_store_types.dart';
 
@@ -26,10 +29,17 @@ class ClipStore extends ChangeNotifier {
   final DateTime Function() _clock;
   final List<ClipItem> _clips = <ClipItem>[];
   final List<String> _queuedIds = <String>[];
+  // ClipItem instances are immutable. Cache the expensive lowercase search
+  // projection once per instance; an edited copy gets a fresh cache entry.
+  final Expando<String> _searchTextCache = Expando<String>('clip search text');
+  final VisibleClipMemo _visibleMemo = VisibleClipMemo();
   late final SemanticSearchController _semanticSearch =
       SemanticSearchController(
         repository: _repository,
-        onChanged: notifyListeners,
+        onChanged: () {
+          _invalidateVisibleClips();
+          notifyListeners();
+        },
       );
   Future<void> _operationTail = Future<void>.value();
   CapturePolicy _policy;
@@ -56,45 +66,34 @@ class ClipStore extends ChangeNotifier {
   List<String> get queuedIds => List<String>.unmodifiable(_queuedIds);
   int get queueLength => _queuedIds.length;
 
+  /// Avoid allocating a copy of the entire paste queue for every visible row.
+  bool isQueued(String id) => _queuedIds.contains(id);
+
+  void _invalidateVisibleClips() => _visibleMemo.invalidate();
+
+  String _searchText(ClipItem clip) =>
+      _searchTextCache[clip] ??= clip.searchableText;
+
   Set<String> get collections => _clips
       .map((clip) => clip.collection)
       .whereType<String>()
       .where((value) => value.isNotEmpty)
       .toSet();
 
+  /// Stable snapshot shared by unrelated UI rebuilds.
   List<ClipItem> get visibleClips {
-    final normalized = _query.trim().toLowerCase();
-    final result = _clips
-        .where((clip) => !(_pinnedOnly && !clip.pinned))
-        .where((clip) => _kindFilter == null || clip.kind == _kindFilter)
-        .where(
-          (clip) =>
-              _collectionFilter == null || clip.collection == _collectionFilter,
-        )
-        .where(
-          (clip) =>
-              normalized.isEmpty ||
-              clip.searchableText.contains(normalized) ||
-              _semanticSearch.matches(clip.id),
-        )
-        .toList(growable: false);
-    result.sort((a, b) {
-      final pinOrder = (b.pinned ? 1 : 0).compareTo(a.pinned ? 1 : 0);
-      if (pinOrder != 0) return pinOrder;
-      if (normalized.isNotEmpty) {
-        final aExact = a.searchableText.contains(normalized);
-        final bExact = b.searchableText.contains(normalized);
-        if (aExact != bExact) return aExact ? -1 : 1;
-        final aRank = _semanticSearch.rankOf(a.id);
-        final bRank = _semanticSearch.rankOf(b.id);
-        if (aRank != null && bRank != null) {
-          final relevance = aRank.compareTo(bRank);
-          if (relevance != 0) return relevance;
-        }
-      }
-      return b.sortTimestamp.compareTo(a.sortTimestamp);
-    });
-    return result;
+    return _visibleMemo.resolve(
+      () => buildVisibleClipSnapshot(
+        _clips,
+        query: _query,
+        pinnedOnly: _pinnedOnly,
+        kindFilter: _kindFilter,
+        collectionFilter: _collectionFilter,
+        semanticMatches: _semanticSearch.matches,
+        semanticRank: _semanticSearch.rankOf,
+        normalizedSearchText: _searchText,
+      ),
+    );
   }
 
   Future<void> initialize() => _enqueue(() async {
@@ -121,6 +120,7 @@ class ClipStore extends ChangeNotifier {
       _policy = _policy.copyWith(captureEnabled: false);
       _statusMessage = 'Encrypted history is locked. Capture remains off.';
     }
+    _invalidateVisibleClips();
     notifyListeners();
   });
 
@@ -128,24 +128,28 @@ class ClipStore extends ChangeNotifier {
     if (_query == value) return;
     _query = value;
     _semanticSearch.setQuery(value);
+    _invalidateVisibleClips();
     notifyListeners();
   }
 
   void setPinnedOnly(bool value) {
     if (_pinnedOnly == value) return;
     _pinnedOnly = value;
+    _invalidateVisibleClips();
     notifyListeners();
   }
 
   void setKindFilter(ClipKind? value) {
     if (_kindFilter == value) return;
     _kindFilter = value;
+    _invalidateVisibleClips();
     notifyListeners();
   }
 
   void setCollectionFilter(String? value) {
     if (_collectionFilter == value) return;
     _collectionFilter = value;
+    _invalidateVisibleClips();
     notifyListeners();
   }
 
@@ -501,6 +505,7 @@ class ClipStore extends ChangeNotifier {
     _vaultLocked = false;
     _policy = _policy.copyWith(captureEnabled: false);
     _statusMessage = 'Encrypted history erased. Capture remains paused.';
+    _invalidateVisibleClips();
     notifyListeners();
   });
 
@@ -513,6 +518,7 @@ class ClipStore extends ChangeNotifier {
     final beforeStatus = _statusMessage;
     mutation();
     _prune(_clock().toUtc());
+    _invalidateVisibleClips();
     notifyListeners();
     try {
       await _repository.save(List<ClipItem>.of(_clips));
@@ -527,6 +533,7 @@ class ClipStore extends ChangeNotifier {
       _vaultLocked = true;
       _policy = _policy.copyWith(captureEnabled: false);
       _statusMessage = 'Encrypted history write failed. Capture is locked.';
+      _invalidateVisibleClips();
       notifyListeners();
       throw const ClipRepositoryException('encrypted history write failed');
     }
@@ -540,12 +547,9 @@ class ClipStore extends ChangeNotifier {
         .toSet();
     _clips.removeWhere((clip) => removed.contains(clip.id));
 
-    final unpinned = _clips.where((clip) => !clip.pinned).toList()
-      ..sort((a, b) => b.sortTimestamp.compareTo(a.sortTimestamp));
-    if (unpinned.length > _policy.maxHistoryItems) {
-      removed.addAll(
-        unpinned.skip(_policy.maxHistoryItems).map((clip) => clip.id),
-      );
+    final overflow = overflowUnpinnedClipIds(_clips, _policy.maxHistoryItems);
+    if (overflow.isNotEmpty) {
+      removed.addAll(overflow);
       _clips.removeWhere((clip) => removed.contains(clip.id));
     }
     _queuedIds.removeWhere(removed.contains);
